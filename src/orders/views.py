@@ -4,6 +4,7 @@ import logging
 import qrcode
 import urllib.request
 import urllib.error
+from PIL import Image
 from django.conf import settings
 from rest_framework import viewsets, status, mixins
 from rest_framework.decorators import action
@@ -249,17 +250,45 @@ class OrderViewSet(viewsets.ModelViewSet):
                 crop_data['height'] = crop_data['h']
             images_data.append({'file': img_file, 'crop_data': crop_data})
 
-        # Create or update ImageCrop for each slot
+        # Create or update ImageCrop for each slot: apply crop (exact position sent),
+        # resize to 685x685, export PNG at 300 DPI
+        CROP_OUTPUT_SIZE = 685
+        CROP_OUTPUT_DPI = (300, 300)
+
         for i, data in enumerate(images_data):
+            img_file = data['file']
+            crop_data = data['crop_data']
+            x = int(crop_data.get('x', 0))
+            y = int(crop_data.get('y', 0))
+            w = int(crop_data.get('width') or crop_data.get('w', 0))
+            h = int(crop_data.get('height') or crop_data.get('h', 0))
+
+            img = Image.open(img_file).convert('RGB')
+            img_w, img_h = img.size
+            # Clamp crop to image bounds (position unchanged, only clamp to edges)
+            left = max(0, min(x, img_w - 1))
+            top = max(0, min(y, img_h - 1))
+            right = max(left + 1, min(x + w, img_w))
+            bottom = max(top + 1, min(y + h, img_h))
+            cropped = img.crop((left, top, right, bottom))
+            resized = cropped.resize((CROP_OUTPUT_SIZE, CROP_OUTPUT_SIZE), Image.LANCZOS)
+
+            buffer = io.BytesIO()
+            resized.save(buffer, format='PNG', dpi=CROP_OUTPUT_DPI)
+            buffer.seek(0)
+            name = getattr(img_file, 'name', f'crop_{i}.png') or f'crop_{i}.png'
+            if not name.lower().endswith('.png'):
+                name = f'{name.rsplit(".", 1)[0] if "." in name else name}_crop.png'
+
             obj, created = ImageCrop.objects.update_or_create(
                 order=order,
                 slot=i,
                 defaults={
                     'display_order': i,
-                    'image': data['file'],
-                    'crop_data': data['crop_data'],
+                    'crop_data': crop_data,
                 }
             )
+            obj.image.save(name, ContentFile(buffer.read()), save=True)
 
         return Response(OrderSerializer(order).data)
 
