@@ -9,9 +9,9 @@ class ImageCropInline(admin.TabularInline):
 
 @admin.register(Order)
 class OrderAdmin(admin.ModelAdmin):
-    list_display = ('id', 'client_name', 'email', 'status', 'created_at')
+    list_display = ('id', 'client_name', 'phone', 'status', 'created_at')
     list_filter = ('status',)
-    search_fields = ('client_name', 'email')
+    search_fields = ('client_name', 'phone')
     inlines = [ImageCropInline]
 
 

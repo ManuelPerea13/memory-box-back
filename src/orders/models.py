@@ -42,10 +42,7 @@ class Order(models.Model):
     session_key = models.CharField(max_length=40, blank=True, null=True, db_index=True)
     # Client data
     client_name = models.CharField(max_length=200)
-    email = models.EmailField(blank=True)
     phone = models.CharField(max_length=50, blank=True)
-    address = models.TextField(blank=True)
-    notes = models.TextField(blank=True)
     # Box options (from client form)
     box_type = models.CharField(
         max_length=20, blank=True, choices=BoxType.choices,
