@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Order, ImageCrop, BoxType, LedType, Variant, ShippingOption
+from .models import Order, ImageCrop, BoxType, LedType, Variant, ShippingOption, Stock, STOCK_VARIANTS
 
 
 class ImageCropSerializer(serializers.ModelSerializer):
@@ -32,3 +32,10 @@ class OrderListSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'client_name', 'phone', 'box_type', 'variant', 'status', 'created_at', 'updated_at'
         ]
+
+
+class StockSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Stock
+        fields = ['id', 'variant', 'quantity']
+        read_only_fields = ['variant']

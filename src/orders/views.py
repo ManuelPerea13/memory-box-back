@@ -2,15 +2,16 @@ import io
 import json
 import qrcode
 from django.conf import settings
-from rest_framework import viewsets, status
+from rest_framework import viewsets, status, mixins
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, JSONParser
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from django.core.files.base import ContentFile
 
-from .models import Order, ImageCrop, OrderStatus
-from .serializers import OrderSerializer, OrderListSerializer, ImageCropSerializer
+from .models import Order, ImageCrop, OrderStatus, Stock, STOCK_VARIANTS
+from .serializers import OrderSerializer, OrderListSerializer, ImageCropSerializer, StockSerializer
+from .websocket_utils import send_orders_update, send_stock_update
 
 REQUIRED_IMAGE_COUNT = 10
 
@@ -31,13 +32,24 @@ class OrderViewSet(viewsets.ModelViewSet):
         return [IsAuthenticated()]
 
     def perform_create(self, serializer):
-        serializer.save(session_key=self.request.session.session_key)
+        instance = serializer.save(session_key=self.request.session.session_key)
+        send_orders_update(order_id=instance.id, client_name=instance.client_name or '')
+
+    def perform_update(self, serializer):
+        serializer.save()
+        send_orders_update()
+        send_stock_update()
+
+    def perform_destroy(self, instance):
+        instance.delete()
+        send_orders_update()
+        send_stock_update()
 
     @action(detail=True, methods=['post'], permission_classes=[AllowAny])
     def send_order(self, request, pk=None):
         """Mark the order as sent, generate QR code, and optionally trigger n8n webhook."""
         order = self.get_object()
-        order.status = OrderStatus.SENT
+        order.status = OrderStatus.IN_PROGRESS
 
         # Generate QR code with frontend URL (same size as images ~400px)
         frontend_url = getattr(settings, 'FRONTEND_URL', 'http://localhost:3000')
@@ -54,7 +66,8 @@ class OrderViewSet(viewsets.ModelViewSet):
         filename = f'order_{order.id}_qr.png'
         order.qr_code.save(filename, ContentFile(buffer.read()), save=False)
         order.save()
-
+        send_orders_update()
+        send_stock_update()
         # TODO: call n8n service if configured
         return Response(OrderSerializer(order, context={'request': request}).data)
 
@@ -127,3 +140,60 @@ class ImageCropViewSet(viewsets.ModelViewSet):
         if not order_id:
             raise ValueError('order_id required')
         serializer.save(order_id=order_id)
+
+
+class StockViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
+    """Stock por variante (4 variantes). List requiere auth; add_stock suma cantidad."""
+    permission_classes = [IsAuthenticated]
+    serializer_class = StockSerializer
+
+    def list(self, request):
+        for v in STOCK_VARIANTS:
+            Stock.objects.get_or_create(variant=v, defaults={'quantity': 0})
+        items = Stock.objects.filter(variant__in=STOCK_VARIANTS).order_by('variant')
+        return Response(StockSerializer(items, many=True).data)
+
+    @action(detail=False, methods=['post'])
+    def add_stock(self, request):
+        variant = request.data.get('variant')
+        amount = request.data.get('amount', 0)
+        if variant not in STOCK_VARIANTS:
+            return Response(
+                {'error': f'variant must be one of: {STOCK_VARIANTS}'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        try:
+            amount = int(amount)
+            if amount < 0:
+                return Response({'error': 'amount must be >= 0'}, status=status.HTTP_400_BAD_REQUEST)
+        except (TypeError, ValueError):
+            return Response({'error': 'amount must be an integer'}, status=status.HTTP_400_BAD_REQUEST)
+        stock, _ = Stock.objects.get_or_create(variant=variant, defaults={'quantity': 0})
+        stock.quantity += amount
+        stock.save()
+        send_stock_update()
+        send_orders_update()
+        return Response(StockSerializer(stock).data)
+
+    @action(detail=False, methods=['post'])
+    def set_stock(self, request):
+        """Fija el stock físico de una variante (reemplaza el valor actual)."""
+        variant = request.data.get('variant')
+        quantity = request.data.get('quantity', 0)
+        if variant not in STOCK_VARIANTS:
+            return Response(
+                {'error': f'variant must be one of: {STOCK_VARIANTS}'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        try:
+            quantity = int(quantity)
+            if quantity < 0:
+                return Response({'error': 'quantity must be >= 0'}, status=status.HTTP_400_BAD_REQUEST)
+        except (TypeError, ValueError):
+            return Response({'error': 'quantity must be an integer'}, status=status.HTTP_400_BAD_REQUEST)
+        stock, _ = Stock.objects.get_or_create(variant=variant, defaults={'quantity': 0})
+        stock.quantity = quantity
+        stock.save()
+        send_stock_update()
+        send_orders_update()
+        return Response(StockSerializer(stock).data)

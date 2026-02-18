@@ -31,7 +31,7 @@ class ShippingOption(models.TextChoices):
 
 class OrderStatus(models.TextChoices):
     DRAFT = 'draft', 'Draft'
-    SENT = 'sent', 'Sent'
+    IN_PROGRESS = 'in_progress', 'En curso'  # antes "Sent": pedido enviado, en curso
     PROCESSING = 'processing', 'Processing'
     DELIVERED = 'delivered', 'Delivered'
 
@@ -90,3 +90,21 @@ class ImageCrop(models.Model):
 
     def __str__(self):
         return f"ImageCrop order={self.order_id} slot={self.slot}"
+
+
+# Variantes base para stock (sin luz): graphite, wood, black, marble
+STOCK_VARIANTS = ['graphite', 'wood', 'black', 'marble']
+
+
+class Stock(models.Model):
+    """Stock disponible por variante de cajita (las 4 variantes base)."""
+    variant = models.CharField(max_length=50, unique=True, choices=[
+        (v, v) for v in STOCK_VARIANTS
+    ])
+    quantity = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        verbose_name_plural = 'Stock'
+
+    def __str__(self):
+        return f"{self.variant}: {self.quantity}"

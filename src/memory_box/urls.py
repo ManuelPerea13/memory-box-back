@@ -21,6 +21,7 @@ schema_view = get_schema_view(
 api_patterns = [
     path('api-token-auth/', CustomTokenObtainPairViewSet.as_view(), name='token_obtain_pair'),
     path('', include('orders.urls')),
+    path('settings/', include('config.urls')),
 ]
 
 urlpatterns = [

@@ -13,4 +13,4 @@ COPY src /app/src
 WORKDIR /app/src
 
 EXPOSE 8000
-CMD ["sh", "-c", "python wait_for_db.py && python manage.py migrate --noinput && python manage.py runserver 0.0.0.0:8000"]
+CMD ["sh", "-c", "python wait_for_db.py && python manage.py migrate --noinput && uvicorn memory_box.asgi:application --host 0.0.0.0 --port 8000"]
