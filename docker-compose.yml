@@ -1,0 +1,48 @@
+name: memory-box
+
+services:
+  web:
+    build: .
+    image: memory-box-back
+    container_name: memory-box-web
+    env_file:
+      - .env
+    volumes:
+      - ./src:/app/src
+      - static_volume:/app/src/staticfiles
+      - media_volume:/app/src/media
+    ports:
+      - "8000:8000"
+    networks:
+      - memory-box-net
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: postgres:14-alpine
+    container_name: memory-box-db
+    volumes:
+      - memory_box_db:/var/lib/postgresql/data
+    env_file:
+      - .env
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-memory_box}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    networks:
+      - memory-box-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-memory_box}"]
+      interval: 3s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  memory_box_db:
+  static_volume:
+  media_volume:
+
+networks:
+  memory-box-net:
+    driver: bridge
