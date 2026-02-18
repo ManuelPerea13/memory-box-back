@@ -2,7 +2,7 @@ from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from django.contrib.auth import authenticate
 
-from .models import Administrador
+from .models import AdminUser
 
 
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
@@ -27,7 +27,7 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
             password=data.get('password'),
         )
         if user is None or not user.is_active:
-            raise serializers.ValidationError('Credenciales inválidas')
+            raise serializers.ValidationError('Invalid credentials')
         refresh = self.get_token(user)
         return {
             'access': str(refresh.access_token),
@@ -36,7 +36,7 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         }
 
 
-class AdministradorSerializer(serializers.ModelSerializer):
+class AdminUserSerializer(serializers.ModelSerializer):
     class Meta:
-        model = Administrador
+        model = AdminUser
         fields = ['id', 'email', 'first_name', 'last_name', 'is_staff', 'is_active']

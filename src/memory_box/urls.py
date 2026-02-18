@@ -10,9 +10,9 @@ from users.views import CustomTokenObtainPairViewSet
 
 schema_view = get_schema_view(
     openapi.Info(
-        title="Cajita de la Memoria API",
+        title="Memory Box API",
         default_version='v1',
-        description="API para pedidos y editor de imágenes",
+        description="API for orders and image editor",
     ),
     public=True,
     permission_classes=[permissions.AllowAny],
@@ -20,7 +20,7 @@ schema_view = get_schema_view(
 
 api_patterns = [
     path('api-token-auth/', CustomTokenObtainPairViewSet.as_view(), name='token_obtain_pair'),
-    path('', include('pedidos.urls')),
+    path('', include('orders.urls')),
 ]
 
 urlpatterns = [

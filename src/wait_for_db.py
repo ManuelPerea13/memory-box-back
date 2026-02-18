@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Espera a que PostgreSQL esté listo antes de ejecutar migrate/runserver."""
+"""Wait for PostgreSQL to be ready before running migrate/runserver."""
 import os
 import sys
 import time

@@ -1,38 +1,38 @@
-# memory-box-back (Cajita de la Memoria – API)
+# memory-box-back (Memory Box – API)
 
-Backend Django REST Framework para el sistema de pedidos Cajita de la Memoria.
+Django REST Framework backend for the Memory Box order system.
 
-## Estructura (réplica de catriel-back)
+## Structure
 
 ```
 memory-box-back/
 ├── src/
 │   ├── manage.py
 │   ├── memory_box/       # config (settings, urls, wsgi, asgi)
-│   ├── pedidos/          # app principal (Pedido, RecorteImagen)
-│   └── users/            # admin JWT (Administrador)
+│   ├── orders/           # main app (Order, ImageCrop)
+│   └── users/            # admin JWT (AdminUser)
 ├── requirements.txt
 ├── Dockerfile
 └── README.md
 ```
 
-## Requisitos
+## Requirements
 
 - Python 3.11+
-- Variables de entorno (opcional): crear `.env` con `SECRET_KEY`, `DEBUG`, `ALLOWED_HOSTS`, `CORS_ALLOWED_ORIGINS`.
+- Environment variables (optional): create `.env` with `SECRET_KEY`, `DEBUG`, `ALLOWED_HOSTS`, `CORS_ALLOWED_ORIGINS`.
 
-## Uso
+## Usage
 
-### Con Docker Compose (PostgreSQL)
+### With Docker Compose (PostgreSQL)
 
 ```bash
 cp .env.example .env
-# Editar .env y ajustar POSTGRES_PASSWORD, SECRET_KEY, etc.
+# Edit .env and set POSTGRES_PASSWORD, SECRET_KEY, etc.
 docker compose up -d
-docker compose exec web python manage.py createsuperuser  # username + password (como catriel)
+docker compose exec web python manage.py createsuperuser  # username + password
 ```
 
-**Resetear la base (borrar tablas y migraciones aplicadas, dejar una sola migración por app):**
+**Reset database (drop tables, reapply migrations):**
 ```bash
 chmod +x scripts/reset_db.sh
 ./scripts/reset_db.sh
@@ -42,7 +42,7 @@ chmod +x scripts/reset_db.sh
 - Docs: `http://localhost:8000/docs/swagger/`
 - Admin: `http://localhost:8000/admin/`
 
-### Local (SQLite, sin Docker)
+### Local (SQLite, no Docker)
 
 ```bash
 cd src
@@ -55,11 +55,11 @@ python manage.py runserver
 ```
 
 - API: `http://localhost:8000/api/`
-- Documentación: `http://localhost:8000/docs/swagger/`
+- Docs: `http://localhost:8000/docs/swagger/`
 - Admin: `http://localhost:8000/admin/`
 
-## Endpoints principales
+## Main endpoints
 
-- `POST /api/api-token-auth/` – Login admin (email, password) → JWT
-- `GET/POST /api/pedidos/` – Listar/crear pedidos
-- `GET/POST /api/recortes/` – Listar/crear recortes (query `pedido_id`)
+- `POST /api/api-token-auth/` – Admin login (email, password) → JWT
+- `GET/POST /api/orders/` – List/create orders
+- `GET/POST /api/image-crops/` – List/create image crops (query `order_id`)

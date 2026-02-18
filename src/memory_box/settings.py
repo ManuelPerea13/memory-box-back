@@ -11,7 +11,7 @@ SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-dev-change-in-production')
 
 DEBUG = os.getenv('DEBUG', 'True') == 'True'
 
-# En desarrollo permitir cualquier host; en producción usar ALLOWED_HOSTS del .env
+# Allow any host in development; use ALLOWED_HOSTS from .env in production
 if DEBUG:
     ALLOWED_HOSTS = ['*']
 else:
@@ -21,7 +21,7 @@ else:
     if not ALLOWED_HOSTS:
         ALLOWED_HOSTS = ['localhost', '127.0.0.1']
 
-AUTH_USER_MODEL = 'users.Administrador'
+AUTH_USER_MODEL = 'users.AdminUser'
 
 BASE_APPS = [
     'django.contrib.admin',
@@ -34,7 +34,7 @@ BASE_APPS = [
 
 LOCAL_APPS = [
     'users.apps.UsersConfig',
-    'pedidos.apps.PedidosConfig',
+    'orders.apps.OrdersConfig',
 ]
 
 THIRD_APPS = [
@@ -89,7 +89,7 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'memory_box.wsgi.application'
 
-# PostgreSQL si DB_HOST está definido (Docker); si no, SQLite para desarrollo local
+# PostgreSQL if DB_HOST is set (Docker); otherwise SQLite for local development
 if os.getenv('DB_HOST'):
     DATABASES = {
         'default': {
@@ -115,7 +115,7 @@ AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator'},
 ]
 
-LANGUAGE_CODE = 'es-ar'
+LANGUAGE_CODE = 'en-us'
 TIME_ZONE = 'America/Argentina/Buenos_Aires'
 USE_I18N = True
 USE_TZ = True

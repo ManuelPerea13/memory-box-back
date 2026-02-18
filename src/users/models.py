@@ -2,8 +2,8 @@ from django.contrib.auth.models import AbstractUser
 from django.db import models
 
 
-class Administrador(AbstractUser):
-    """Usuario admin para el panel de Cajita de la Memoria (mismo esquema que CatrielUser)."""
+class AdminUser(AbstractUser):
+    """Admin user for the Memory Box panel."""
     username = models.CharField(max_length=150, unique=True, blank=True)
     email = models.EmailField(unique=False, blank=True, null=True)
     first_name = models.CharField(max_length=30, blank=True, null=True)

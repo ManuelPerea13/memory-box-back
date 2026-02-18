@@ -5,8 +5,8 @@ from .models import Order, ImageCrop, BoxType, LedType, Variant, ShippingOption
 class ImageCropSerializer(serializers.ModelSerializer):
     class Meta:
         model = ImageCrop
-        fields = ['id', 'order', 'slot', 'orden', 'imagen', 'crop_data', 'creado']
-        read_only_fields = ['creado']
+        fields = ['id', 'order', 'slot', 'display_order', 'image', 'crop_data', 'created_at']
+        read_only_fields = ['created_at']
 
 
 class OrderSerializer(serializers.ModelSerializer):
@@ -19,16 +19,16 @@ class OrderSerializer(serializers.ModelSerializer):
     class Meta:
         model = Order
         fields = [
-            'id', 'session_key', 'nombre_cliente', 'email', 'telefono',
-            'direccion', 'notas', 'box_type', 'led_type', 'variant', 'shipping_option',
-            'status', 'creado', 'actualizado', 'image_crops'
+            'id', 'session_key', 'client_name', 'email', 'phone',
+            'address', 'notes', 'box_type', 'led_type', 'variant', 'shipping_option',
+            'status', 'created_at', 'updated_at', 'image_crops'
         ]
-        read_only_fields = ['creado', 'actualizado']
+        read_only_fields = ['created_at', 'updated_at']
 
 
 class OrderListSerializer(serializers.ModelSerializer):
     class Meta:
         model = Order
         fields = [
-            'id', 'nombre_cliente', 'email', 'box_type', 'variant', 'status', 'creado', 'actualizado'
+            'id', 'client_name', 'email', 'box_type', 'variant', 'status', 'created_at', 'updated_at'
         ]
