@@ -126,6 +126,9 @@ STATIC_ROOT = BASE_DIR / 'staticfiles'
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
+# Base URL of frontend for QR codes (React suele correr en :3000)
+FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://192.168.88.100:3000')
+
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 SWAGGER_SETTINGS = {

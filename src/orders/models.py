@@ -63,6 +63,7 @@ class Order(models.Model):
     status = models.CharField(
         max_length=20, choices=OrderStatus.choices, default=OrderStatus.DRAFT
     )
+    qr_code = models.ImageField(upload_to='qrcodes/%Y/%m/%d/', blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

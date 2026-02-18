@@ -1,9 +1,13 @@
+import io
 import json
+import qrcode
+from django.conf import settings
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, JSONParser
 from rest_framework.permissions import AllowAny, IsAuthenticated
+from django.core.files.base import ContentFile
 
 from .models import Order, ImageCrop, OrderStatus
 from .serializers import OrderSerializer, OrderListSerializer, ImageCropSerializer
@@ -31,12 +35,28 @@ class OrderViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'], permission_classes=[AllowAny])
     def send_order(self, request, pk=None):
-        """Mark the order as sent (and optionally trigger n8n webhook)."""
+        """Mark the order as sent, generate QR code, and optionally trigger n8n webhook."""
         order = self.get_object()
         order.status = OrderStatus.SENT
+
+        # Generate QR code with frontend URL (same size as images ~400px)
+        frontend_url = getattr(settings, 'FRONTEND_URL', 'http://localhost:3000')
+        qr_url = f'{frontend_url.rstrip("/")}/pedido/{order.id}'
+        qr = qrcode.QRCode(version=1, box_size=10, border=2)
+        qr.add_data(qr_url)
+        qr.make(fit=True)
+        img = qr.make_image(fill_color='black', back_color='white')
+        img = img.resize((400, 400))
+
+        buffer = io.BytesIO()
+        img.save(buffer, format='PNG')
+        buffer.seek(0)
+        filename = f'order_{order.id}_qr.png'
+        order.qr_code.save(filename, ContentFile(buffer.read()), save=False)
         order.save()
+
         # TODO: call n8n service if configured
-        return Response(OrderSerializer(order).data)
+        return Response(OrderSerializer(order, context={'request': request}).data)
 
     @action(detail=True, methods=['post'], permission_classes=[AllowAny])
     def submit_images(self, request, pk=None):

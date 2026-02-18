@@ -21,9 +21,9 @@ class OrderSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'session_key', 'client_name', 'phone',
             'box_type', 'led_type', 'variant', 'shipping_option',
-            'status', 'created_at', 'updated_at', 'image_crops'
+            'status', 'qr_code', 'created_at', 'updated_at', 'image_crops'
         ]
-        read_only_fields = ['created_at', 'updated_at']
+        read_only_fields = ['created_at', 'updated_at', 'qr_code']
 
 
 class OrderListSerializer(serializers.ModelSerializer):
