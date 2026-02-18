@@ -10,7 +10,6 @@ class SiteSettingsSerializer(serializers.ModelSerializer):
             'price_sin_luz',
             'price_con_luz',
             'price_pilas',
-            'deposit_amount',
             'transfer_alias',
             'transfer_bank',
             'transfer_holder',

@@ -4,12 +4,12 @@ from .models import SiteSettings
 
 @admin.register(SiteSettings)
 class SiteSettingsAdmin(admin.ModelAdmin):
-    list_display = ('id', 'price_sin_luz', 'price_con_luz', 'deposit_amount')
+    list_display = ('id', 'price_sin_luz', 'price_con_luz', 'price_pilas')
     fieldsets = (
         ('Precios', {
             'fields': (
                 'price_mercadolibre', 'price_sin_luz', 'price_con_luz',
-                'price_pilas', 'deposit_amount',
+                'price_pilas',
             )
         }),
         ('Transferencia', {

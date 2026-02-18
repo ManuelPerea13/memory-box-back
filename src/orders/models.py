@@ -31,8 +31,8 @@ class ShippingOption(models.TextChoices):
 
 class OrderStatus(models.TextChoices):
     DRAFT = 'draft', 'Draft'
-    IN_PROGRESS = 'in_progress', 'En curso'  # antes "Sent": pedido enviado, en curso
-    PROCESSING = 'processing', 'Processing'
+    IN_PROGRESS = 'in_progress', 'In Progress'
+    PROCESSING = 'processing', 'Finalized'
     DELIVERED = 'delivered', 'Delivered'
 
 
@@ -63,6 +63,8 @@ class Order(models.Model):
     status = models.CharField(
         max_length=20, choices=OrderStatus.choices, default=OrderStatus.DRAFT
     )
+    deposit = models.BooleanField(default=False, help_text='Deposit (seña) received')
+    active = models.BooleanField(default=True, help_text='If False, order is hidden from admin table (not deleted)')
     qr_code = models.ImageField(upload_to='qrcodes/%Y/%m/%d/', blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

@@ -21,7 +21,7 @@ class OrderSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'session_key', 'client_name', 'phone',
             'box_type', 'led_type', 'variant', 'shipping_option',
-            'status', 'qr_code', 'created_at', 'updated_at', 'image_crops'
+            'status', 'deposit', 'active', 'qr_code', 'created_at', 'updated_at', 'image_crops'
         ]
         read_only_fields = ['created_at', 'updated_at', 'qr_code']
 
@@ -30,7 +30,8 @@ class OrderListSerializer(serializers.ModelSerializer):
     class Meta:
         model = Order
         fields = [
-            'id', 'client_name', 'phone', 'box_type', 'variant', 'status', 'created_at', 'updated_at'
+            'id', 'client_name', 'phone', 'box_type', 'led_type', 'variant',
+            'shipping_option', 'status', 'deposit', 'active', 'created_at', 'updated_at'
         ]
 
 

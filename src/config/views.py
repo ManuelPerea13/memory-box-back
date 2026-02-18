@@ -16,7 +16,6 @@ def get_settings():
             'price_sin_luz': 24000,
             'price_con_luz': 42000,
             'price_pilas': 2500,
-            'deposit_amount': 12000,
             'transfer_alias': 'manu.perea13',
             'transfer_bank': 'Mercado Pago',
             'transfer_holder': 'Manuel Perea',

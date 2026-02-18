@@ -3,7 +3,7 @@ import json
 
 
 class OrdersConsumer(AsyncWebsocketConsumer):
-    """WebSocket para actualizaciones de la tabla de pedidos (Dashboard)."""
+    """WebSocket for orders table updates (Dashboard)."""
 
     async def connect(self):
         await self.accept()
@@ -20,7 +20,7 @@ class OrdersConsumer(AsyncWebsocketConsumer):
 
 
 class StockConsumer(AsyncWebsocketConsumer):
-    """WebSocket para actualizaciones de stock y pedidos en curso (página Stock)."""
+    """WebSocket for stock and in-progress orders updates (Stock page)."""
 
     async def connect(self):
         await self.accept()

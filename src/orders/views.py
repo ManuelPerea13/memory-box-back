@@ -9,7 +9,7 @@ from rest_framework.parsers import MultiPartParser, JSONParser
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from django.core.files.base import ContentFile
 
-from .models import Order, ImageCrop, OrderStatus, Stock, STOCK_VARIANTS
+from .models import Order, ImageCrop, OrderStatus, Stock, STOCK_VARIANTS, BoxType
 from .serializers import OrderSerializer, OrderListSerializer, ImageCropSerializer, StockSerializer
 from .websocket_utils import send_orders_update, send_stock_update
 
@@ -20,6 +20,12 @@ class OrderViewSet(viewsets.ModelViewSet):
     """CRUD for orders. List/retrieve require auth; create can be AllowAny for public flow."""
     queryset = Order.objects.all()
     parser_classes = (MultiPartParser, JSONParser)
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        if self.action == 'list' and self.request.query_params.get('include_hidden') != '1':
+            qs = qs.filter(active=True)
+        return qs
 
     def get_serializer_class(self):
         if self.action == 'list':
@@ -33,7 +39,7 @@ class OrderViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         instance = serializer.save(session_key=self.request.session.session_key)
-        send_orders_update(order_id=instance.id, client_name=instance.client_name or '')
+        send_orders_update()
 
     def perform_update(self, serializer):
         serializer.save()
@@ -47,7 +53,7 @@ class OrderViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'], permission_classes=[AllowAny])
     def send_order(self, request, pk=None):
-        """Mark the order as sent, generate QR code, and optionally trigger n8n webhook."""
+        """Set order to In Progress, generate QR code, and optionally trigger n8n webhook."""
         order = self.get_object()
         order.status = OrderStatus.IN_PROGRESS
 
@@ -66,7 +72,16 @@ class OrderViewSet(viewsets.ModelViewSet):
         filename = f'order_{order.id}_qr.png'
         order.qr_code.save(filename, ContentFile(buffer.read()), save=False)
         order.save()
-        send_orders_update()
+        variant_display = (order.get_variant_display() or order.variant or '').strip()
+        with_light = order.box_type == BoxType.WITH_LIGHT
+        # status='in_progress' so front shows bell notification (In Progress only)
+        send_orders_update(
+            order_id=order.id,
+            client_name=order.client_name or '',
+            variant=variant_display,
+            with_light=with_light,
+            status=order.status,
+        )
         send_stock_update()
         # TODO: call n8n service if configured
         return Response(OrderSerializer(order, context={'request': request}).data)

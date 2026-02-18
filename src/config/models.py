@@ -11,7 +11,6 @@ class SiteSettings(models.Model):
     price_sin_luz = models.PositiveIntegerField(default=24000)
     price_con_luz = models.PositiveIntegerField(default=42000)
     price_pilas = models.PositiveIntegerField(default=2500)
-    deposit_amount = models.PositiveIntegerField(default=12000)
     # Transferencia
     transfer_alias = models.CharField(max_length=100, default='manu.perea13')
     transfer_bank = models.CharField(max_length=100, default='Mercado Pago')
