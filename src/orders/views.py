@@ -1,6 +1,9 @@
 import io
 import json
+import logging
 import qrcode
+import urllib.request
+import urllib.error
 from django.conf import settings
 from rest_framework import viewsets, status, mixins
 from rest_framework.decorators import action
@@ -9,11 +12,122 @@ from rest_framework.parsers import MultiPartParser, JSONParser
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from django.core.files.base import ContentFile
 
+logger = logging.getLogger(__name__)
+
 from .models import Order, ImageCrop, OrderStatus, Stock, STOCK_VARIANTS, BoxType
 from .serializers import OrderSerializer, OrderListSerializer, ImageCropSerializer, StockSerializer
 from .websocket_utils import send_orders_update, send_stock_update
+from config.views import get_settings
 
 REQUIRED_IMAGE_COUNT = 10
+
+
+def _notify_n8n_new_order(order):
+    """POST to n8n webhook when order goes IN_PROGRESS (WhatsApp/Telegram). No-op if N8N_WEBHOOK_URL not set."""
+    url = getattr(settings, 'N8N_WEBHOOK_URL', None)
+    logger.info('n8n notify order %s: N8N_WEBHOOK_URL=%s', order.id, 'SET' if url else 'NOT SET')
+    if not url:
+        logger.warning('n8n notify order %s: skipped (N8N_WEBHOOK_URL not configured)', order.id)
+        return
+    order.refresh_from_db()
+    payload = {
+        'order_id': order.id,
+        'client_name': order.client_name or '',
+        'phone': order.phone or '',
+        'box_type': order.box_type or '',
+        'led_type': order.led_type or '',
+        'variant': order.variant or '',
+        'shipping_option': order.shipping_option or '',
+        'status': order.status,
+        'created_at': order.created_at.isoformat() if order.created_at else None,
+    }
+    logger.info('n8n payload for order %s: %s', order.id, payload)
+    try:
+        data = json.dumps(payload).encode('utf-8')
+        req = urllib.request.Request(url, data=data, method='POST')
+        req.add_header('Content-Type', 'application/json')
+        logger.info('n8n notify order %s: POST %s', order.id, url)
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            body = resp.read().decode('utf-8', errors='replace') if resp else ''
+            logger.info('n8n notify order %s: response %s %s', order.id, resp.status, body[:200] if body else '')
+            if resp.status not in (200, 201):
+                logger.warning('n8n webhook returned status %s for order %s', resp.status, order.id)
+    except urllib.error.URLError as e:
+        logger.warning('n8n webhook failed for order %s: %s', order.id, e)
+    except Exception as e:
+        logger.exception('n8n webhook error for order %s: %s', order.id, e)
+
+
+def _notify_n8n_order_finalized(order):
+    """
+    POST to n8n webhook when order goes to Finalized (processing).
+    Sends first_name, phone, saldo_pendiente for WhatsApp to client.
+    Saldo = precio total del tipo de cajita - seña (seña = mitad: con luz (con_luz+pilas)/2, sin luz sin_luz/2).
+    """
+    logger.info('n8n order finalized: start order_id=%s', order.id)
+    url = getattr(settings, 'N8N_WEBHOOK_FINALIZED_URL', None)
+    if not url:
+        logger.warning('n8n order finalized %s: skipped (N8N_WEBHOOK_FINALIZED_URL not set)', order.id)
+        return
+    logger.info('n8n order finalized %s: POST url=%s', order.id, url)
+    order.refresh_from_db()
+    first_name = (order.client_name or '').strip().split()[0] or 'Cliente'
+    raw_phone = (order.phone or '').strip()
+    if not raw_phone:
+        logger.warning('n8n order finalized %s: no phone, skip webhook', order.id)
+        return
+    # Normalize phone to E.164 for Twilio (Argentina: 10 digits -> +549...; 11 with leading 0 -> strip 0 then +549)
+    digits = ''.join(c for c in raw_phone if c.isdigit())
+    if raw_phone.startswith('+'):
+        phone = raw_phone
+    elif len(digits) == 11 and digits.startswith('0'):
+        phone = '+549' + digits[1:]
+    elif len(digits) == 10:
+        phone = '+549' + digits
+    elif digits:
+        phone = '+' + digits
+    else:
+        phone = raw_phone
+    logger.info('n8n order finalized %s: phone raw=%r normalized=%s', order.id, raw_phone, phone)
+    try:
+        site = get_settings()
+        if order.box_type == BoxType.WITH_LIGHT:
+            total = (site.price_con_luz or 0) + (site.price_pilas or 0)
+        else:
+            total = site.price_sin_luz or 0
+        senia = total // 2
+        saldo_pendiente = total - senia
+    except Exception as e:
+        logger.warning('n8n order finalized %s: could not get prices: %s', order.id, e)
+        saldo_pendiente = 0
+    # Formato Argentina: miles con punto (22.250)
+    saldo_formatted = f'{saldo_pendiente:,}'.replace(',', '.')
+    payload = {
+        'order_id': order.id,
+        'first_name': first_name,
+        'phone': phone,
+        'saldo_pendiente': saldo_pendiente,
+        'saldo_pendiente_formatted': saldo_formatted,
+    }
+    logger.info('n8n order finalized payload for %s: %s', order.id, payload)
+    try:
+        data = json.dumps(payload).encode('utf-8')
+        req = urllib.request.Request(url, data=data, method='POST')
+        req.add_header('Content-Type', 'application/json')
+        logger.info('n8n order finalized %s: sending POST body=%s', order.id, data.decode('utf-8'))
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            body = resp.read().decode('utf-8', errors='replace') if resp else ''
+            logger.info('n8n order finalized %s: response status=%s body=%s', order.id, resp.status, body[:500] if body else '')
+    except urllib.error.HTTPError as e:
+        body = e.read().decode('utf-8', errors='replace') if e.fp else ''
+        logger.warning(
+            'n8n finalized webhook HTTP error for order %s: code=%s reason=%s body=%s',
+            order.id, e.code, e.reason, body[:500] if body else '',
+        )
+    except urllib.error.URLError as e:
+        logger.warning('n8n finalized webhook URLError for order %s: reason=%s err=%s', order.id, getattr(e, 'reason', None), e)
+    except Exception as e:
+        logger.exception('n8n finalized webhook error for order %s: %s', order.id, e)
 
 
 class OrderViewSet(viewsets.ModelViewSet):
@@ -42,7 +156,18 @@ class OrderViewSet(viewsets.ModelViewSet):
         send_orders_update()
 
     def perform_update(self, serializer):
+        instance = serializer.instance
+        old_status = instance.status
         serializer.save()
+        new_status = instance.status
+        logger.info(
+            'order perform_update id=%s old_status=%s new_status=%s will_notify_finalized=%s',
+            instance.id, old_status, new_status,
+            old_status != OrderStatus.PROCESSING and new_status == OrderStatus.PROCESSING,
+        )
+        if old_status != OrderStatus.PROCESSING and new_status == OrderStatus.PROCESSING:
+            logger.info('order id=%s: calling _notify_n8n_order_finalized', instance.id)
+            _notify_n8n_order_finalized(instance)
         send_orders_update()
         send_stock_update()
 
@@ -83,7 +208,8 @@ class OrderViewSet(viewsets.ModelViewSet):
             status=order.status,
         )
         send_stock_update()
-        # TODO: call n8n service if configured
+        logger.info('send_order: calling n8n webhook for order %s', order.id)
+        _notify_n8n_new_order(order)
         return Response(OrderSerializer(order, context={'request': request}).data)
 
     @action(detail=True, methods=['post'], permission_classes=[AllowAny])

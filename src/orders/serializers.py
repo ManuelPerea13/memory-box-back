@@ -38,5 +38,5 @@ class OrderListSerializer(serializers.ModelSerializer):
 class StockSerializer(serializers.ModelSerializer):
     class Meta:
         model = Stock
-        fields = ['id', 'variant', 'quantity']
-        read_only_fields = ['variant']
+        fields = ['id', 'variant', 'box_type', 'quantity']
+        read_only_fields = ['variant', 'box_type']

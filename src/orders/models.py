@@ -94,19 +94,29 @@ class ImageCrop(models.Model):
         return f"ImageCrop order={self.order_id} slot={self.slot}"
 
 
-# Variantes base para stock (sin luz): graphite, wood, black, marble
+# Variantes base para stock: graphite, wood, black, marble
 STOCK_VARIANTS = ['graphite', 'wood', 'black', 'marble']
+
+# box_type para stock: no_light, with_light (mismo que Order.box_type)
+STOCK_BOX_TYPES = [BoxType.NO_LIGHT, BoxType.WITH_LIGHT]
 
 
 class Stock(models.Model):
-    """Stock disponible por variante de cajita (las 4 variantes base)."""
-    variant = models.CharField(max_length=50, unique=True, choices=[
+    """Stock disponible por variante y tipo de cajita (variante + sin/con luz)."""
+    variant = models.CharField(max_length=50, choices=[
         (v, v) for v in STOCK_VARIANTS
     ])
+    box_type = models.CharField(
+        max_length=20,
+        choices=BoxType.choices,
+        default=BoxType.NO_LIGHT,
+        help_text='no_light | with_light'
+    )
     quantity = models.PositiveIntegerField(default=0)
 
     class Meta:
         verbose_name_plural = 'Stock'
+        unique_together = [['variant', 'box_type']]
 
     def __str__(self):
-        return f"{self.variant}: {self.quantity}"
+        return f"{self.variant} ({self.get_box_type_display()}): {self.quantity}"

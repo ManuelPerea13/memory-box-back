@@ -140,6 +140,8 @@ FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://192.168.88.100:3000')
 
 # n8n webhook para notificar nuevo pedido (Telegram + WhatsApp). Opcional.
 N8N_WEBHOOK_URL = os.getenv('N8N_WEBHOOK_URL') or None
+# n8n webhook cuando el pedido pasa a Finalizado (mensaje WhatsApp al cliente con saldo pendiente).
+N8N_WEBHOOK_FINALIZED_URL = os.getenv('N8N_WEBHOOK_FINALIZED_URL') or None
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
@@ -166,4 +168,21 @@ SIMPLE_JWT = {
     'AUTH_HEADER_TYPES': ('Bearer',),
     'USER_ID_FIELD': 'id',
     'USER_ID_CLAIM': 'user_id',
+}
+
+# Logs de orders (n8n webhook, etc.) en consola para debug
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+        },
+    },
+    'loggers': {
+        'orders': {
+            'handlers': ['console'],
+            'level': 'INFO',
+        },
+    },
 }

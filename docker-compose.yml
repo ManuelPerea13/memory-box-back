@@ -7,6 +7,9 @@ services:
     container_name: memory-box-web
     env_file:
       - .env
+    environment:
+      - N8N_WEBHOOK_URL=${N8N_WEBHOOK_URL:-}
+      - N8N_WEBHOOK_FINALIZED_URL=${N8N_WEBHOOK_FINALIZED_URL:-}
     volumes:
       - ./src:/app/src
       - static_volume:/app/src/staticfiles
