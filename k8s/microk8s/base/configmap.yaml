@@ -8,3 +8,6 @@ data:
   ALLOWED_HOSTS: "*"
   CORS_ALLOWED_ORIGINS: "http://localhost:30082,http://127.0.0.1:30082,https://memory-box.shop,https://www.memory-box.shop"
   CSRF_TRUSTED_ORIGINS: "https://memory-box.shop,https://www.memory-box.shop"
+  # n8n en el mismo namespace (memory-box-prod); el back llama a estos webhooks
+  N8N_WEBHOOK_URL: "http://memory-box-n8n:5678/webhook/new-order"
+  N8N_WEBHOOK_FINALIZED_URL: "http://memory-box-n8n:5678/webhook/order-finalized"
