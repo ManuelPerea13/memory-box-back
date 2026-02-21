@@ -58,6 +58,10 @@ python manage.py runserver
 - Docs: `http://localhost:8000/docs/swagger/`
 - Admin: `http://localhost:8000/admin/`
 
+## Deploy on mark1
+
+Deploy config lives on the server (same pattern as pos-service): `~/workspaces/memory-box/` with `k8s/microk8s/` (base + overlays) and `repos/memory-box-back` for the code. Build image from repo, push to `localhost:32000/memory-box-back:prod`, apply k8s from the server.
+
 ## Main endpoints
 
 - `POST /api/api-token-auth/` – Admin login (email, password) → JWT
