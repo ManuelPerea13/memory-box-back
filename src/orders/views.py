@@ -1,11 +1,15 @@
 import io
 import json
 import logging
+import os
+import re
+import zipfile
 import qrcode
 import urllib.request
 import urllib.error
 from PIL import Image
 from django.conf import settings
+from django.http import HttpResponse
 from rest_framework import viewsets, status, mixins
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -295,6 +299,54 @@ class OrderViewSet(viewsets.ModelViewSet):
             obj.image.save(name, ContentFile(buffer.read()), save=True)
 
         return Response(OrderSerializer(order).data)
+
+    @action(detail=True, methods=['get'], permission_classes=[IsAuthenticated])
+    def download_zip(self, request, pk=None):
+        """
+        Build and return a ZIP with order crop images (1..10) and QR (11).
+        Admin only; avoids browser fetch to /media/ which can fail (CORS/proxy).
+        """
+        order = self.get_object()
+        media_root = settings.MEDIA_ROOT
+        crops = list(order.image_crops.order_by('slot', 'display_order')[:10])
+        ext = '.png'
+        if crops and crops[0].image:
+            name = getattr(crops[0].image, 'name', '') or ''
+            if name.lower().endswith(('.jpg', '.jpeg')):
+                ext = '.jpg'
+            elif name.lower().endswith('.webp'):
+                ext = '.webp'
+
+        buf = io.BytesIO()
+        added = []
+        with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
+            for i, crop in enumerate(crops):
+                if not crop.image:
+                    continue
+                path = crop.image.path if hasattr(crop.image, 'path') else os.path.join(media_root, crop.image.name)
+                if os.path.isfile(path):
+                    zf.write(path, f'{i + 1}{ext}')
+                    added.append(f'{i + 1}{ext}')
+            if order.qr_code:
+                qr_path = order.qr_code.path if hasattr(order.qr_code, 'path') else os.path.join(media_root, order.qr_code.name)
+                if os.path.isfile(qr_path):
+                    zf.write(qr_path, f'11{ext}')
+                    added.append('11' + ext)
+
+        if not added:
+            return Response(
+                {'error': 'No se pudo obtener ninguna imagen. ¿El pedido tiene imágenes subidas?'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        buf.seek(0)
+        created = order.created_at or order.updated_at
+        yyyymmdd = created.strftime('%Y%m%d') if created else 'pedido'
+        safe_name = re.sub(r'[/\\:*?"<>|\s]+', '_', (order.client_name or 'cliente').strip()) or 'cliente'
+        filename = f'{yyyymmdd}-{safe_name}.zip'
+        response = HttpResponse(buf.getvalue(), content_type='application/zip')
+        response['Content-Disposition'] = f'attachment; filename="{filename}"'
+        return response
 
 
 class ImageCropViewSet(viewsets.ModelViewSet):
