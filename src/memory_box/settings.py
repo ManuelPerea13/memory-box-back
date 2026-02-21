@@ -72,6 +72,9 @@ CORS_ALLOW_ALL_ORIGINS = DEBUG
 CORS_ALLOWED_ORIGINS = os.getenv('CORS_ALLOWED_ORIGINS', '').split(',') if os.getenv('CORS_ALLOWED_ORIGINS') else []
 CORS_ALLOW_CREDENTIALS = True
 
+# Django 4+: necesario tras proxy HTTPS para que el login del admin no devuelva 403 CSRF
+CSRF_TRUSTED_ORIGINS = [x.strip() for x in os.getenv('CSRF_TRUSTED_ORIGINS', '').split(',') if x.strip()]
+
 ROOT_URLCONF = 'memory_box.urls'
 
 TEMPLATES = [
