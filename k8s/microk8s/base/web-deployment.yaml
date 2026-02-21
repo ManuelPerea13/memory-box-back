@@ -1,0 +1,36 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: memory-box-back
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: memory-box-back
+  template:
+    metadata:
+      labels:
+        app: memory-box-back
+    spec:
+      containers:
+        - name: web
+          image: localhost:32000/memory-box-back:prod
+          imagePullPolicy: Always
+          envFrom:
+            - configMapRef:
+                name: memory-box-config
+            - secretRef:
+                name: memory-box-secret
+          ports:
+            - containerPort: 8000
+          volumeMounts:
+            - name: static
+              mountPath: /app/src/staticfiles
+            - name: media
+              mountPath: /app/src/media
+      volumes:
+        - name: static
+          persistentVolumeClaim:
+            claimName: memory-box-static-pvc
+        - name: media
+          emptyDir: {}

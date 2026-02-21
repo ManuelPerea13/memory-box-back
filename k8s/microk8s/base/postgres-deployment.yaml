@@ -1,0 +1,29 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: memory-box-db
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: memory-box-db
+  template:
+    metadata:
+      labels:
+        app: memory-box-db
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:14-alpine
+          envFrom:
+            - secretRef:
+                name: memory-box-secret
+          ports:
+            - containerPort: 5432
+          volumeMounts:
+            - name: db-data
+              mountPath: /var/lib/postgresql/data
+      volumes:
+        - name: db-data
+          persistentVolumeClaim:
+            claimName: memory-box-db-pvc
