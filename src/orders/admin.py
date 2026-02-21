@@ -19,3 +19,4 @@ class OrderAdmin(admin.ModelAdmin):
 class ImageCropAdmin(admin.ModelAdmin):
     list_display = ('id', 'order', 'slot', 'display_order', 'created_at')
     list_filter = ('order',)
+    ordering = ('-id',)

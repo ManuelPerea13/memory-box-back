@@ -35,12 +35,14 @@ BASE_APPS = [
 LOCAL_APPS = [
     'users.apps.UsersConfig',
     'orders.apps.OrdersConfig',
+    'config.apps.ConfigAppConfig',
 ]
 
 THIRD_APPS = [
     'rest_framework',
     'drf_yasg',
     'corsheaders',
+    'channels',
 ]
 
 INSTALLED_APPS = BASE_APPS + LOCAL_APPS + THIRD_APPS
@@ -88,6 +90,13 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = 'memory_box.wsgi.application'
+ASGI_APPLICATION = 'memory_box.asgi.application'
+
+CHANNEL_LAYERS = {
+    'default': {
+        'BACKEND': 'channels.layers.InMemoryChannelLayer',
+    },
+}
 
 # PostgreSQL if DB_HOST is set (Docker); otherwise SQLite for local development
 if os.getenv('DB_HOST'):
@@ -126,6 +135,14 @@ STATIC_ROOT = BASE_DIR / 'staticfiles'
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
+# Base URL of frontend for QR codes (React suele correr en :3000)
+FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://192.168.88.100:3000')
+
+# n8n webhook para notificar nuevo pedido (Telegram + WhatsApp). Opcional.
+N8N_WEBHOOK_URL = os.getenv('N8N_WEBHOOK_URL') or None
+# n8n webhook cuando el pedido pasa a Finalizado (mensaje WhatsApp al cliente con saldo pendiente).
+N8N_WEBHOOK_FINALIZED_URL = os.getenv('N8N_WEBHOOK_FINALIZED_URL') or None
+
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 SWAGGER_SETTINGS = {
@@ -151,4 +168,21 @@ SIMPLE_JWT = {
     'AUTH_HEADER_TYPES': ('Bearer',),
     'USER_ID_FIELD': 'id',
     'USER_ID_CLAIM': 'user_id',
+}
+
+# Logs de orders (n8n webhook, etc.) en consola para debug
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+        },
+    },
+    'loggers': {
+        'orders': {
+            'handlers': ['console'],
+            'level': 'INFO',
+        },
+    },
 }

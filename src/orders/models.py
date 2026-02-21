@@ -31,8 +31,8 @@ class ShippingOption(models.TextChoices):
 
 class OrderStatus(models.TextChoices):
     DRAFT = 'draft', 'Draft'
-    SENT = 'sent', 'Sent'
-    PROCESSING = 'processing', 'Processing'
+    IN_PROGRESS = 'in_progress', 'In Progress'
+    PROCESSING = 'processing', 'Finalized'
     DELIVERED = 'delivered', 'Delivered'
 
 
@@ -63,6 +63,9 @@ class Order(models.Model):
     status = models.CharField(
         max_length=20, choices=OrderStatus.choices, default=OrderStatus.DRAFT
     )
+    deposit = models.BooleanField(default=False, help_text='Deposit (seña) received')
+    active = models.BooleanField(default=True, help_text='If False, order is hidden from admin table (not deleted)')
+    qr_code = models.ImageField(upload_to='qrcodes/%Y/%m/%d/', blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -89,3 +92,31 @@ class ImageCrop(models.Model):
 
     def __str__(self):
         return f"ImageCrop order={self.order_id} slot={self.slot}"
+
+
+# Variantes base para stock: graphite, wood, black, marble
+STOCK_VARIANTS = ['graphite', 'wood', 'black', 'marble']
+
+# box_type para stock: no_light, with_light (mismo que Order.box_type)
+STOCK_BOX_TYPES = [BoxType.NO_LIGHT, BoxType.WITH_LIGHT]
+
+
+class Stock(models.Model):
+    """Stock disponible por variante y tipo de cajita (variante + sin/con luz)."""
+    variant = models.CharField(max_length=50, choices=[
+        (v, v) for v in STOCK_VARIANTS
+    ])
+    box_type = models.CharField(
+        max_length=20,
+        choices=BoxType.choices,
+        default=BoxType.NO_LIGHT,
+        help_text='no_light | with_light'
+    )
+    quantity = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        verbose_name_plural = 'Stock'
+        unique_together = [['variant', 'box_type']]
+
+    def __str__(self):
+        return f"{self.variant} ({self.get_box_type_display()}): {self.quantity}"
