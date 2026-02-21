@@ -5,6 +5,7 @@ resources:
   - secret.yaml
   - pvc.yaml
   - static-pvc.yaml
+  - media-pvc.yaml
   - postgres-deployment.yaml
   - postgres-service.yaml
   - web-deployment.yaml

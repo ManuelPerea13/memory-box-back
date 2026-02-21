@@ -33,4 +33,5 @@ spec:
           persistentVolumeClaim:
             claimName: memory-box-static-pvc
         - name: media
-          emptyDir: {}
+          persistentVolumeClaim:
+            claimName: memory-box-media-pvc
