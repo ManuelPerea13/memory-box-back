@@ -138,8 +138,10 @@ class OrderViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         qs = super().get_queryset()
-        if self.action == 'list' and self.request.query_params.get('include_hidden') != '1':
-            qs = qs.filter(active=True)
+        if self.action == 'list':
+            if self.request.query_params.get('include_hidden') != '1':
+                qs = qs.filter(active=True)
+            qs = qs.order_by('-id')
         return qs
 
     def get_serializer_class(self):
@@ -161,12 +163,14 @@ class OrderViewSet(viewsets.ModelViewSet):
         old_status = instance.status
         serializer.save()
         new_status = instance.status
+        will_notify = old_status != OrderStatus.PROCESSING and new_status == OrderStatus.PROCESSING
         logger.info(
             'order perform_update id=%s old_status=%s new_status=%s will_notify_finalized=%s',
-            instance.id, old_status, new_status,
-            old_status != OrderStatus.PROCESSING and new_status == OrderStatus.PROCESSING,
+            instance.id, old_status, new_status, will_notify,
         )
-        if old_status != OrderStatus.PROCESSING and new_status == OrderStatus.PROCESSING:
+        if not will_notify and new_status != OrderStatus.PROCESSING:
+            logger.debug('order id=%s: no finalized webhook (new_status=%s, need processing)', instance.id, new_status)
+        if will_notify:
             logger.info('order id=%s: calling _notify_n8n_order_finalized', instance.id)
             _notify_n8n_order_finalized(instance)
         send_orders_update()
