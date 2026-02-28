@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Order, ImageCrop
+from .models import Order, ImageCrop, PackagingStock
 
 
 class ImageCropInline(admin.TabularInline):
@@ -20,3 +20,9 @@ class ImageCropAdmin(admin.ModelAdmin):
     list_display = ('id', 'order', 'slot', 'display_order', 'created_at')
     list_filter = ('order',)
     ordering = ('-id',)
+
+
+@admin.register(PackagingStock)
+class PackagingStockAdmin(admin.ModelAdmin):
+    list_display = ('item_type', 'quantity')
+    list_editable = ('quantity',)
