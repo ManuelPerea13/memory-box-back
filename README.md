@@ -11,6 +11,7 @@ memory-box-back/
 │   ├── memory_box/       # config (settings, urls, wsgi, asgi)
 │   ├── orders/           # main app (Order, ImageCrop)
 │   └── users/            # admin JWT (AdminUser)
+├── k8s/microk8s/        # deploy en mark1 (base + overlays dev/prod)
 ├── requirements.txt
 ├── Dockerfile
 └── README.md
@@ -58,9 +59,19 @@ python manage.py runserver
 - Docs: `http://localhost:8000/docs/swagger/`
 - Admin: `http://localhost:8000/admin/`
 
-## Deploy on mark1
+## Deploy on mark1 (MicroK8s)
 
-Deploy config lives on the server (same pattern as pos-service): `~/workspaces/memory-box/` with `k8s/microk8s/` (base + overlays) and `repos/memory-box-back` for the code. Build image from repo, push to `localhost:32000/memory-box-back:prod`, apply k8s from the server.
+Todo lo necesario está en este repo: código + `k8s/microk8s/` (base + overlays dev/prod). En mark1:
+
+1. Clonar con deploy key en `~/workspaces/memory-box/repos/memory-box-back`.
+2. Editar `k8s/microk8s/base/secret.yaml` (SECRET_KEY, POSTGRES_PASSWORD) y aplicar:
+   ```bash
+   docker build -t localhost:32000/memory-box-back:prod .
+   docker push localhost:32000/memory-box-back:prod
+   microk8s kubectl create namespace memory-box-prod
+   microk8s kubectl apply -k k8s/microk8s/overlays/prod -n memory-box-prod
+   ```
+3. Actualizar: `git pull`, rebuild, push, `kubectl rollout restart deployment memory-box-back -n memory-box-prod`.
 
 ## Main endpoints
 
