@@ -36,6 +36,7 @@ LOCAL_APPS = [
     'users.apps.UsersConfig',
     'orders.apps.OrdersConfig',
     'config.apps.ConfigAppConfig',
+    'expenses.apps.ExpensesConfig',
 ]
 
 THIRD_APPS = [

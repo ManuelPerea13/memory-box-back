@@ -1,3 +1,4 @@
+from decimal import Decimal
 from django.db import models
 
 
@@ -66,6 +67,16 @@ class Order(models.Model):
     deposit = models.BooleanField(default=False, help_text='Deposit (seña) received')
     active = models.BooleanField(default=True, help_text='If False, order is hidden from admin table (not deleted)')
     qr_code = models.ImageField(upload_to='qrcodes/%Y/%m/%d/', blank=True, null=True)
+    # Costo asociado al pedido en el momento de finalizar (no se recalcula si cambian precios después).
+    cost_snapshot = models.JSONField(
+        blank=True, null=True,
+        help_text='Cost snapshot when finalizing: cost_caja, cost_pla, cost_empaque, total.'
+    )
+    # Sale price when finalized (for stats without depending on current prices).
+    price_snapshot = models.JSONField(
+        blank=True, null=True,
+        help_text='Sale price when finalized: precio_venta (no_light or with_light+batteries).'
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -120,3 +131,23 @@ class Stock(models.Model):
 
     def __str__(self):
         return f"{self.variant} ({self.get_box_type_display()}): {self.quantity}"
+
+
+# Packaging inventory (cardboard boxes, ecommerce bags). Decremented when orders are finalized.
+class PackagingStock(models.Model):
+    CAJA_CARTON = 'caja_carton'
+    BOLSA_ECOMMERCE = 'bolsa_ecommerce'
+    ITEM_TYPE_CHOICES = [
+        (CAJA_CARTON, 'Cardboard box (shipping)'),
+        (BOLSA_ECOMMERCE, 'Ecommerce bag'),
+    ]
+    item_type = models.CharField(max_length=30, choices=ITEM_TYPE_CHOICES, unique=True)
+    quantity = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        verbose_name = 'Packaging stock'
+        verbose_name_plural = 'Packaging stock'
+
+    def __str__(self):
+        return f"{self.get_item_type_display()}: {self.quantity}"
+

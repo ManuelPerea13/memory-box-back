@@ -4,4 +4,4 @@ from django.apps import AppConfig
 class ConfigAppConfig(AppConfig):
     default_auto_field = 'django.db.models.BigAutoField'
     name = 'config'
-    verbose_name = 'Configuración del sitio'
+    verbose_name = 'Site configuration'
