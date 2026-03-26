@@ -1,0 +1,36 @@
+name: Deploy Mark1 (master)
+
+on:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-mark1-memory-box-back-master
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on:
+      - self-hosted
+      - Linux
+      - X64
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build image and rollout on mark1
+        shell: bash
+        run: |
+          set -euo pipefail
+          IMAGE_TAG="master-${GITHUB_SHA::7}"
+          microk8s enable registry >/dev/null 2>&1 || true
+
+          docker build -t "localhost:32000/memory-box-back:${IMAGE_TAG}" .
+          docker push "localhost:32000/memory-box-back:${IMAGE_TAG}"
+          microk8s kubectl apply -k k8s/microk8s/overlays/prod
+          microk8s kubectl -n memory-box-prod set image deployment/memory-box-back web="localhost:32000/memory-box-back:${IMAGE_TAG}"
+          microk8s kubectl -n memory-box-prod rollout restart deployment/memory-box-back
+          microk8s kubectl -n memory-box-prod rollout status deployment/memory-box-back --timeout=300s
+          microk8s kubectl -n memory-box-prod get pods -o wide
