@@ -1,9 +1,27 @@
 name: Deploy Mark1 (master)
 
+# --- CI/CD automático PAUSADO ---
+# Deploy manual en mark1 (rama master), ejemplo:
+#   cd ~/workspaces/memory-box/repos/memory-box-back
+#   git fetch origin && git checkout master && git pull origin master
+#   IMAGE_TAG="master-$(git rev-parse --short HEAD)"
+#   microk8s enable registry >/dev/null 2>&1 || true
+#   docker build -t "localhost:32000/memory-box-back:${IMAGE_TAG}" .
+#   docker push "localhost:32000/memory-box-back:${IMAGE_TAG}"
+#   microk8s kubectl apply -k k8s/microk8s/overlays/prod
+#   microk8s kubectl -n memory-box-prod set image deployment/memory-box-back web="localhost:32000/memory-box-back:${IMAGE_TAG}"
+#   microk8s kubectl -n memory-box-prod rollout restart deployment/memory-box-back
+#   microk8s kubectl -n memory-box-prod rollout status deployment/memory-box-back --timeout=300s
+#
+# Para reactivar GitHub Actions: descomentar el bloque `on.push` de abajo y quitar `if: false` del job `deploy`.
+
+# on:
+#   push:
+#     branches:
+#       - master
+#   workflow_dispatch:
+
 on:
-  push:
-    branches:
-      - master
   workflow_dispatch:
 
 concurrency:
@@ -12,6 +30,7 @@ concurrency:
 
 jobs:
   deploy:
+    if: false
     runs-on:
       - self-hosted
       - Linux
