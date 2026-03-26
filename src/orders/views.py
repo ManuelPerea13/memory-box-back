@@ -2,10 +2,14 @@ import io
 import json
 import logging
 import math
+import os
+import re
+import unicodedata
+import zipfile
 import qrcode
 import urllib.request
 import urllib.error
-from PIL import Image
+from PIL import Image, ImageOps
 from django.conf import settings
 from rest_framework import viewsets, status, mixins
 from rest_framework.decorators import action
@@ -14,6 +18,8 @@ from rest_framework.parsers import MultiPartParser, JSONParser
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.views import APIView
 from django.core.files.base import ContentFile
+from django.db import transaction
+from django.http import FileResponse
 from django.db.models import Count
 from django.db.models.functions import TruncDate, TruncMonth
 from django.utils import timezone
@@ -33,6 +39,39 @@ from expenses.views import get_cost_settings
 from expenses.models import Purchase, PurchaseCategory
 
 REQUIRED_IMAGE_COUNT = 10
+
+
+def _crop_coord_to_int(value, field: str, slot: int):
+    """Convierte coordenadas del front (a veces float) a int; rechaza NaN/inf."""
+    if value is None:
+        raise ValueError(f'crop_data_{slot}: falta "{field}"')
+    try:
+        n = float(value)
+    except (TypeError, ValueError):
+        raise ValueError(f'crop_data_{slot}: "{field}" no es un número válido')
+    if not math.isfinite(n):
+        raise ValueError(f'crop_data_{slot}: "{field}" inválido')
+    return int(round(n))
+
+
+def _normalize_crop_payload(crop_data: dict, slot: int) -> dict:
+    """
+    Devuelve crop normalizado {x, y, width, height} para guardar y procesar.
+    Acepta width/height o w/h.
+    """
+    data = crop_data if isinstance(crop_data, dict) else {}
+    w = data.get('width', data.get('w'))
+    h = data.get('height', data.get('h'))
+    x = _crop_coord_to_int(data.get('x', 0), 'x', slot)
+    y = _crop_coord_to_int(data.get('y', 0), 'y', slot)
+    width = _crop_coord_to_int(w, 'width', slot)
+    height = _crop_coord_to_int(h, 'height', slot)
+    if width <= 0 or height <= 0:
+        raise ValueError(
+            f'crop_data_{slot}: width y height deben ser > 0 (recibido {width}x{height})'
+        )
+    return {'x': x, 'y': y, 'width': width, 'height': height}
+
 
 # Mapeo variant del pedido -> nombre variante para PLA (Grafito, Madera, etc.)
 ORDER_VARIANT_TO_PLA_VARIANTE = {
@@ -391,54 +430,156 @@ class OrderViewSet(viewsets.ModelViewSet):
                     {'error': f'Invalid crop_data_{i}: must be valid JSON.'},
                     status=status.HTTP_400_BAD_REQUEST
                 )
-            # Normalize keys (accept x,y,w,h or x,y,width,height)
-            if 'w' in crop_data and 'width' not in crop_data:
-                crop_data['width'] = crop_data['w']
-            if 'h' in crop_data and 'height' not in crop_data:
-                crop_data['height'] = crop_data['h']
+            if not isinstance(crop_data, dict):
+                return Response(
+                    {'error': f'crop_data_{i} must be a JSON object.'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
             images_data.append({'file': img_file, 'crop_data': crop_data})
 
-        # Create or update ImageCrop for each slot: apply crop (exact position sent),
-        # resize to 685x685, export PNG at 300 DPI
+        prepared = []
+        for i, data in enumerate(images_data):
+            try:
+                crop_norm = _normalize_crop_payload(data['crop_data'], i)
+            except ValueError as e:
+                return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+            prepared.append({'file': data['file'], 'crop_norm': crop_norm})
+
+        # Create or update ImageCrop for each slot: apply crop, resize to square output.
         CROP_OUTPUT_SIZE = 685
         CROP_OUTPUT_DPI = (300, 300)
 
-        for i, data in enumerate(images_data):
-            img_file = data['file']
-            crop_data = data['crop_data']
-            x = int(crop_data.get('x', 0))
-            y = int(crop_data.get('y', 0))
-            w = int(crop_data.get('width') or crop_data.get('w', 0))
-            h = int(crop_data.get('height') or crop_data.get('h', 0))
+        try:
+            with transaction.atomic():
+                for i, data in enumerate(prepared):
+                    img_file = data['file']
+                    norm = data['crop_norm']
+                    x, y = norm['x'], norm['y']
+                    w, h = norm['width'], norm['height']
+                    img_file.seek(0)
+                    try:
+                        img = Image.open(img_file).convert('RGB')
+                    except OSError as exc:
+                        logger.warning('submit_images: slot %s no se pudo abrir imagen: %s', i, exc)
+                        raise ValueError(
+                            f'Imagen {i + 1}: archivo ilegible o formato no soportado'
+                        ) from exc
+                    img = ImageOps.exif_transpose(img)
+                    img_w, img_h = img.size
+                    left = max(0, min(x, img_w - 1))
+                    top = max(0, min(y, img_h - 1))
+                    right = max(left + 1, min(x + w, img_w))
+                    bottom = max(top + 1, min(y + h, img_h))
+                    cropped = img.crop((left, top, right, bottom))
+                    crop_w, crop_h = cropped.size
 
-            img = Image.open(img_file).convert('RGB')
-            img_w, img_h = img.size
-            # Clamp crop to image bounds (position unchanged, only clamp to edges)
-            left = max(0, min(x, img_w - 1))
-            top = max(0, min(y, img_h - 1))
-            right = max(left + 1, min(x + w, img_w))
-            bottom = max(top + 1, min(y + h, img_h))
-            cropped = img.crop((left, top, right, bottom))
-            resized = cropped.resize((CROP_OUTPUT_SIZE, CROP_OUTPUT_SIZE), Image.LANCZOS)
+                    if crop_w > 0 and crop_h > 0:
+                        final = cropped.resize((CROP_OUTPUT_SIZE, CROP_OUTPUT_SIZE), Image.LANCZOS)
+                    else:
+                        final = Image.new('RGB', (CROP_OUTPUT_SIZE, CROP_OUTPUT_SIZE), (0, 0, 0))
 
-            buffer = io.BytesIO()
-            resized.save(buffer, format='PNG', dpi=CROP_OUTPUT_DPI)
-            buffer.seek(0)
-            name = getattr(img_file, 'name', f'crop_{i}.png') or f'crop_{i}.png'
-            if not name.lower().endswith('.png'):
-                name = f'{name.rsplit(".", 1)[0] if "." in name else name}_crop.png'
+                    buffer = io.BytesIO()
+                    final.save(buffer, format='PNG', dpi=CROP_OUTPUT_DPI)
+                    buffer.seek(0)
+                    name = getattr(img_file, 'name', f'crop_{i}.png') or f'crop_{i}.png'
+                    if not name.lower().endswith('.png'):
+                        name = f'{name.rsplit(".", 1)[0] if "." in name else name}_crop.png'
 
-            obj, created = ImageCrop.objects.update_or_create(
-                order=order,
-                slot=i,
-                defaults={
-                    'display_order': i,
-                    'crop_data': crop_data,
-                }
-            )
-            obj.image.save(name, ContentFile(buffer.read()), save=True)
+                    obj, created = ImageCrop.objects.update_or_create(
+                        order=order,
+                        slot=i,
+                        defaults={
+                            'display_order': i,
+                            'crop_data': norm,
+                        }
+                    )
+                    obj.image.save(name, ContentFile(buffer.read()), save=True)
+        except ValueError as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
+        logger.info('submit_images: order=%s saved %s crops', order.id, len(prepared))
         return Response(OrderSerializer(order).data)
+
+    @action(detail=True, methods=['get'])
+    def download_zip(self, request, pk=None):
+        """
+        Descarga un ZIP con las imágenes recortadas del pedido (orden por slot 1..N).
+        Requiere usuario autenticado (admin).
+        """
+        order = self.get_object()
+        crops = list(
+            order.image_crops.filter(image__isnull=False).exclude(image='').order_by('slot', 'display_order')
+        )
+        if not crops:
+            return Response(
+                {'error': 'Este pedido no tiene imágenes guardadas para descargar.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        # Match submit_images output size so everything is consistent for printing.
+        CROP_OUTPUT_SIZE = 685
+
+        buf = io.BytesIO()
+        added = 0
+        with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
+            for crop in crops:
+                try:
+                    with crop.image.open('rb') as img_f:
+                        data = img_f.read()
+                except OSError as exc:
+                    logger.warning(
+                        'download_zip: order=%s slot=%s no se pudo leer: %s',
+                        order.id,
+                        crop.slot,
+                        exc,
+                    )
+                    continue
+                if not data:
+                    continue
+                _, ext = os.path.splitext(crop.image.name or '')
+                ext = (ext or '.png').lower()
+                if ext not in ('.png', '.jpg', '.jpeg', '.webp', '.gif'):
+                    ext = '.png'
+                inner_name = f'{crop.slot + 1:02d}{ext}'
+                zf.writestr(inner_name, data)
+                added += 1
+
+            # Add QR as slot 11 (same size as crop output).
+            try:
+                if getattr(order, 'qr_code', None):
+                    with order.qr_code.open('rb') as qr_f:
+                        qr_img = Image.open(qr_f).convert('RGBA')
+                    qr_img = ImageOps.exif_transpose(qr_img)
+                    qr_img = qr_img.resize((CROP_OUTPUT_SIZE, CROP_OUTPUT_SIZE), Image.LANCZOS)
+                    qr_buf = io.BytesIO()
+                    qr_img.save(qr_buf, format='PNG')
+                    qr_buf.seek(0)
+                    zf.writestr('11.png', qr_buf.read())
+            except OSError as exc:
+                logger.warning('download_zip: order=%s no se pudo leer/crear QR: %s', order.id, exc)
+
+        if added == 0:
+            return Response(
+                {'error': 'No se pudieron leer los archivos de imagen.'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        buf.seek(0)
+        created_local = timezone.localtime(order.created_at) if order.created_at else timezone.localtime()
+        date_str = created_local.strftime('%Y%m%d')
+        raw_client = (order.client_name or '').strip()
+        client_ascii = unicodedata.normalize('NFKD', raw_client)
+        client_ascii = ''.join(ch for ch in client_ascii if not unicodedata.combining(ch))
+        client_safe = re.sub(r'[^A-Za-z0-9]+', '', client_ascii)
+        if not client_safe:
+            client_safe = f'pedido{order.id}'
+        safe_name = f'{date_str}-{client_safe}.zip'
+        return FileResponse(
+            buf,
+            as_attachment=True,
+            filename=safe_name,
+            content_type='application/zip',
+        )
 
 
 class ImageCropViewSet(viewsets.ModelViewSet):
