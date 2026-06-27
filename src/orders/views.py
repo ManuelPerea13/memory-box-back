@@ -11,7 +11,6 @@ import urllib.request
 import urllib.error
 from PIL import Image, ImageOps
 from django.conf import settings
-from django.http import HttpResponse
 from rest_framework import viewsets, status, mixins
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -40,6 +39,12 @@ from expenses.views import get_cost_settings
 from expenses.models import Purchase, PurchaseCategory
 
 REQUIRED_IMAGE_COUNT = 10
+
+# Impresión alta calidad: lado del recuadro en cm a 300 DPI → px (5.8/2.54)*300 ≈ 685.
+CROP_PRINT_SIDE_CM = 5.8
+CROP_PRINT_DPI = 300
+CROP_OUTPUT_PX = round((CROP_PRINT_SIDE_CM / 2.54) * CROP_PRINT_DPI)
+CROP_OUTPUT_DPI = (CROP_PRINT_DPI, CROP_PRINT_DPI)
 
 
 def _crop_coord_to_int(value, field: str, slot: int):
@@ -85,6 +90,30 @@ ORDER_VARIANT_TO_PLA_VARIANTE = {
     'black_light': 'Negro',
     'marble_light': 'Mármol',
 }
+
+
+def _order_qr_target_url(order_id: int) -> str:
+    """URL que codifica el QR: FRONTEND_URL + /pedido/<id>."""
+    base = (getattr(settings, 'FRONTEND_URL', '') or '').strip()
+    if not base:
+        base = 'http://localhost:3000'
+    return f'{base.rstrip("/")}/pedido/{order_id}'
+
+
+def _write_order_qr_png(order: Order) -> None:
+    """Genera PNG 400×400 con la URL del pedido y lo asigna a order.qr_code (save=False)."""
+    qr_url = _order_qr_target_url(order.id)
+    qr = qrcode.QRCode(version=1, box_size=10, border=2)
+    qr.add_data(qr_url)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color='black', back_color='white')
+    img = img.resize((400, 400))
+    buffer = io.BytesIO()
+    img.save(buffer, format='PNG')
+    buffer.seek(0)
+    filename = f'order_{order.id}_qr.png'
+    order.qr_code.save(filename, ContentFile(buffer.read()), save=False)
+    logger.info('order id=%s: QR generado apuntando a %s', order.id, qr_url)
 
 
 def _get_packaging_unit_costs():
@@ -371,20 +400,7 @@ class OrderViewSet(viewsets.ModelViewSet):
         order = self.get_object()
         order.status = OrderStatus.IN_PROGRESS
 
-        # Generate QR code with frontend URL (same size as images ~400px)
-        frontend_url = getattr(settings, 'FRONTEND_URL', 'http://localhost:3000')
-        qr_url = f'{frontend_url.rstrip("/")}/pedido/{order.id}'
-        qr = qrcode.QRCode(version=1, box_size=10, border=2)
-        qr.add_data(qr_url)
-        qr.make(fit=True)
-        img = qr.make_image(fill_color='black', back_color='white')
-        img = img.resize((400, 400))
-
-        buffer = io.BytesIO()
-        img.save(buffer, format='PNG')
-        buffer.seek(0)
-        filename = f'order_{order.id}_qr.png'
-        order.qr_code.save(filename, ContentFile(buffer.read()), save=False)
+        _write_order_qr_png(order)
         order.save()
         variant_display = (order.get_variant_display() or order.variant or '').strip()
         with_light = order.box_type == BoxType.WITH_LIGHT
@@ -399,6 +415,17 @@ class OrderViewSet(viewsets.ModelViewSet):
         send_stock_update()
         logger.info('send_order: calling n8n webhook for order %s', order.id)
         _notify_n8n_new_order(order)
+        return Response(OrderSerializer(order, context={'request': request}).data)
+
+    @action(detail=True, methods=['post'])
+    def regenerate_qr(self, request, pk=None):
+        """
+        Regenera la imagen del QR usando FRONTEND_URL actual.
+        No cambia el estado del pedido ni vuelve a llamar a n8n (útil si el QR quedó con URL de dev/LAN).
+        """
+        order = self.get_object()
+        _write_order_qr_png(order)
+        order.save()
         return Response(OrderSerializer(order, context={'request': request}).data)
 
     @action(detail=True, methods=['post'], permission_classes=[AllowAny])
@@ -447,9 +474,6 @@ class OrderViewSet(viewsets.ModelViewSet):
             prepared.append({'file': data['file'], 'crop_norm': crop_norm})
 
         # Create or update ImageCrop for each slot: apply crop, resize to square output.
-        CROP_OUTPUT_SIZE = 685
-        CROP_OUTPUT_DPI = (300, 300)
-
         try:
             with transaction.atomic():
                 for i, data in enumerate(prepared):
@@ -475,9 +499,9 @@ class OrderViewSet(viewsets.ModelViewSet):
                     crop_w, crop_h = cropped.size
 
                     if crop_w > 0 and crop_h > 0:
-                        final = cropped.resize((CROP_OUTPUT_SIZE, CROP_OUTPUT_SIZE), Image.LANCZOS)
+                        final = cropped.resize((CROP_OUTPUT_PX, CROP_OUTPUT_PX), Image.LANCZOS)
                     else:
-                        final = Image.new('RGB', (CROP_OUTPUT_SIZE, CROP_OUTPUT_SIZE), (0, 0, 0))
+                        final = Image.new('RGB', (CROP_OUTPUT_PX, CROP_OUTPUT_PX), (0, 0, 0))
 
                     buffer = io.BytesIO()
                     final.save(buffer, format='PNG', dpi=CROP_OUTPUT_DPI)
@@ -517,9 +541,6 @@ class OrderViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        # Match submit_images output size so everything is consistent for printing.
-        CROP_OUTPUT_SIZE = 685
-
         buf = io.BytesIO()
         added = 0
         with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
@@ -551,9 +572,9 @@ class OrderViewSet(viewsets.ModelViewSet):
                     with order.qr_code.open('rb') as qr_f:
                         qr_img = Image.open(qr_f).convert('RGBA')
                     qr_img = ImageOps.exif_transpose(qr_img)
-                    qr_img = qr_img.resize((CROP_OUTPUT_SIZE, CROP_OUTPUT_SIZE), Image.LANCZOS)
+                    qr_img = qr_img.resize((CROP_OUTPUT_PX, CROP_OUTPUT_PX), Image.LANCZOS)
                     qr_buf = io.BytesIO()
-                    qr_img.save(qr_buf, format='PNG')
+                    qr_img.save(qr_buf, format='PNG', dpi=CROP_OUTPUT_DPI)
                     qr_buf.seek(0)
                     zf.writestr('11.png', qr_buf.read())
             except OSError as exc:
@@ -581,54 +602,6 @@ class OrderViewSet(viewsets.ModelViewSet):
             filename=safe_name,
             content_type='application/zip',
         )
-
-    @action(detail=True, methods=['get'], permission_classes=[IsAuthenticated])
-    def download_zip(self, request, pk=None):
-        """
-        Build and return a ZIP with order crop images (1..10) and QR (11).
-        Admin only; avoids browser fetch to /media/ which can fail (CORS/proxy).
-        """
-        order = self.get_object()
-        media_root = settings.MEDIA_ROOT
-        crops = list(order.image_crops.order_by('slot', 'display_order')[:10])
-        ext = '.png'
-        if crops and crops[0].image:
-            name = getattr(crops[0].image, 'name', '') or ''
-            if name.lower().endswith(('.jpg', '.jpeg')):
-                ext = '.jpg'
-            elif name.lower().endswith('.webp'):
-                ext = '.webp'
-
-        buf = io.BytesIO()
-        added = []
-        with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
-            for i, crop in enumerate(crops):
-                if not crop.image:
-                    continue
-                path = crop.image.path if hasattr(crop.image, 'path') else os.path.join(media_root, crop.image.name)
-                if os.path.isfile(path):
-                    zf.write(path, f'{i + 1}{ext}')
-                    added.append(f'{i + 1}{ext}')
-            if order.qr_code:
-                qr_path = order.qr_code.path if hasattr(order.qr_code, 'path') else os.path.join(media_root, order.qr_code.name)
-                if os.path.isfile(qr_path):
-                    zf.write(qr_path, f'11{ext}')
-                    added.append('11' + ext)
-
-        if not added:
-            return Response(
-                {'error': 'No se pudo obtener ninguna imagen. ¿El pedido tiene imágenes subidas?'},
-                status=status.HTTP_404_NOT_FOUND
-            )
-
-        buf.seek(0)
-        created = order.created_at or order.updated_at
-        yyyymmdd = created.strftime('%Y%m%d') if created else 'pedido'
-        safe_name = re.sub(r'[/\\:*?"<>|\s]+', '_', (order.client_name or 'cliente').strip()) or 'cliente'
-        filename = f'{yyyymmdd}-{safe_name}.zip'
-        response = HttpResponse(buf.getvalue(), content_type='application/zip')
-        response['Content-Disposition'] = f'attachment; filename="{filename}"'
-        return response
 
 
 class ImageCropViewSet(viewsets.ModelViewSet):
