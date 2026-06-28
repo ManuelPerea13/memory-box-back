@@ -4,6 +4,10 @@ metadata:
   name: memory-box-back
   annotations:
     cert-manager.io/cluster-issuer: letsencrypt-prod
+    # submit_images sube las 10 fotos originales (decenas de MB) → subir el límite del body
+    nginx.ingress.kubernetes.io/proxy-body-size: "100m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "120"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "120"
 spec:
   ingressClassName: public
   tls:
