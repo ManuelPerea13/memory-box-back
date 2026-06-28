@@ -8,10 +8,10 @@ spec:
   ingressClassName: public
   tls:
     - hosts:
-        - api.pos-service.cloud
+        - api.innovbi.site
       secretName: memory-box-back-tls
   rules:
-    - host: api.pos-service.cloud
+    - host: api.innovbi.site
       http:
         paths:
           - path: /
