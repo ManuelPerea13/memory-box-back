@@ -10,3 +10,5 @@ psycopg2-binary>=2.9
 channels>=4.0
 uvicorn[standard]>=0.30
 whitenoise>=6.0
+celery>=5.3
+redis>=5.0

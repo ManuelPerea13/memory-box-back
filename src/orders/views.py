@@ -34,6 +34,7 @@ from .serializers import (
     PackagingStockSerializer, PurchaseSerializer,
 )
 from .websocket_utils import send_orders_update, send_stock_update
+from .tasks import process_order_images_task
 from config.views import get_settings
 from expenses.views import get_cost_settings
 from expenses.models import Purchase, PurchaseCategory
@@ -343,7 +344,7 @@ class OrderViewSet(viewsets.ModelViewSet):
         return OrderSerializer
 
     def get_permissions(self):
-        if self.action in ('create', 'retrieve', 'update', 'partial_update', 'send_order', 'submit_images'):
+        if self.action in ('create', 'retrieve', 'update', 'partial_update', 'send_order', 'submit_images', 'submit_status'):
             return [AllowAny()]
         return [IsAuthenticated()]
 
@@ -364,8 +365,11 @@ class OrderViewSet(viewsets.ModelViewSet):
         if not will_notify and new_status != OrderStatus.PROCESSING:
             logger.debug('order id=%s: no finalized webhook (new_status=%s, need processing)', instance.id, new_status)
         if will_notify:
-            logger.info('order id=%s: calling _notify_n8n_order_finalized', instance.id)
-            _notify_n8n_order_finalized(instance)
+            # Notificación n8n de "finalizado" DESHABILITADA (no se usa n8n por ahora).
+            # Para reactivar de forma ASÍNCRONA con Celery (no bloquea la respuesta),
+            # descomentar las 2 líneas:
+            # from .tasks import notify_n8n_order_finalized_task
+            # notify_n8n_order_finalized_task.delay(instance.id)
             # Descontar 1 caja de cartón y 1 bolsa ecommerce por pedido finalizado.
             for item_type in (PackagingStock.CAJA_CARTON, PackagingStock.BOLSA_ECOMMERCE):
                 try:
@@ -413,8 +417,12 @@ class OrderViewSet(viewsets.ModelViewSet):
             status=order.status,
         )
         send_stock_update()
-        logger.info('send_order: calling n8n webhook for order %s', order.id)
-        _notify_n8n_new_order(order)
+        # Notificación n8n de "nuevo pedido" DESHABILITADA (no se usa n8n por ahora).
+        # Antes esto era una llamada SÍNCRONA (urlopen timeout=10) que bloqueaba la
+        # respuesta ~10s cuando n8n no respondía. Para reactivar de forma ASÍNCRONA
+        # con Celery (no bloquea), descomentar las 2 líneas:
+        # from .tasks import notify_n8n_new_order_task
+        # notify_n8n_new_order_task.delay(order.id)
         return Response(OrderSerializer(order, context={'request': request}).data)
 
     @action(detail=True, methods=['post'])
@@ -473,57 +481,61 @@ class OrderViewSet(viewsets.ModelViewSet):
                 return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
             prepared.append({'file': data['file'], 'crop_norm': crop_norm})
 
-        # Create or update ImageCrop for each slot: apply crop, resize to square output.
+        # Guardar los archivos crudos en un dir temporal compartido con el worker
+        # (media_volume) y encolar el procesamiento pesado en Celery para no bloquear
+        # la respuesta. El recorte + resize ocurre en process_order_images_task.
+        pending_dir = os.path.join(settings.MEDIA_ROOT, '_pending', str(order.id))
         try:
-            with transaction.atomic():
-                for i, data in enumerate(prepared):
-                    img_file = data['file']
-                    norm = data['crop_norm']
-                    x, y = norm['x'], norm['y']
-                    w, h = norm['width'], norm['height']
-                    img_file.seek(0)
-                    try:
-                        img = Image.open(img_file).convert('RGB')
-                    except OSError as exc:
-                        logger.warning('submit_images: slot %s no se pudo abrir imagen: %s', i, exc)
-                        raise ValueError(
-                            f'Imagen {i + 1}: archivo ilegible o formato no soportado'
-                        ) from exc
-                    img = ImageOps.exif_transpose(img)
-                    img_w, img_h = img.size
-                    left = max(0, min(x, img_w - 1))
-                    top = max(0, min(y, img_h - 1))
-                    right = max(left + 1, min(x + w, img_w))
-                    bottom = max(top + 1, min(y + h, img_h))
-                    cropped = img.crop((left, top, right, bottom))
-                    crop_w, crop_h = cropped.size
+            os.makedirs(pending_dir, exist_ok=True)
+            for old in os.listdir(pending_dir):  # limpiar restos de un intento previo
+                try:
+                    os.remove(os.path.join(pending_dir, old))
+                except OSError:
+                    pass
+            items = []
+            for i, data in enumerate(prepared):
+                img_file = data['file']
+                ext = os.path.splitext(getattr(img_file, 'name', '') or '')[1].lower() or '.img'
+                tmp_path = os.path.join(pending_dir, f'{i}{ext}')
+                img_file.seek(0)
+                with open(tmp_path, 'wb') as out:
+                    for chunk in img_file.chunks():
+                        out.write(chunk)
+                items.append({
+                    'slot': i,
+                    'path': tmp_path,
+                    'crop_norm': data['crop_norm'],
+                    'name': getattr(img_file, 'name', f'crop_{i}.png') or f'crop_{i}.png',
+                })
+        except OSError as e:
+            logger.exception('submit_images: error guardando temporales order=%s: %s', order.id, e)
+            return Response({'error': 'No se pudieron guardar las imágenes'},
+                            status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-                    if crop_w > 0 and crop_h > 0:
-                        final = cropped.resize((CROP_OUTPUT_PX, CROP_OUTPUT_PX), Image.LANCZOS)
-                    else:
-                        final = Image.new('RGB', (CROP_OUTPUT_PX, CROP_OUTPUT_PX), (0, 0, 0))
+        task = process_order_images_task.delay(order.id, items)
+        logger.info('submit_images: order=%s encolada task=%s (%s imágenes)', order.id, task.id, len(items))
+        return Response(
+            {'task_id': task.id, 'status': 'queued', 'total': REQUIRED_IMAGE_COUNT},
+            status=status.HTTP_202_ACCEPTED,
+        )
 
-                    buffer = io.BytesIO()
-                    final.save(buffer, format='PNG', dpi=CROP_OUTPUT_DPI)
-                    buffer.seek(0)
-                    name = getattr(img_file, 'name', f'crop_{i}.png') or f'crop_{i}.png'
-                    if not name.lower().endswith('.png'):
-                        name = f'{name.rsplit(".", 1)[0] if "." in name else name}_crop.png'
-
-                    obj, created = ImageCrop.objects.update_or_create(
-                        order=order,
-                        slot=i,
-                        defaults={
-                            'display_order': i,
-                            'crop_data': norm,
-                        }
-                    )
-                    obj.image.save(name, ContentFile(buffer.read()), save=True)
-        except ValueError as e:
-            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
-
-        logger.info('submit_images: order=%s saved %s crops', order.id, len(prepared))
-        return Response(OrderSerializer(order).data)
+    @action(detail=True, methods=['get'], permission_classes=[AllowAny])
+    def submit_status(self, request, pk=None):
+        """Estado del procesamiento async de imágenes (el front hace polling)."""
+        task_id = request.query_params.get('task_id')
+        if not task_id:
+            return Response({'error': 'task_id requerido'}, status=status.HTTP_400_BAD_REQUEST)
+        from memory_box.celery import app as celery_app
+        res = celery_app.AsyncResult(task_id)
+        info = res.info if isinstance(res.info, dict) else {}
+        data = {
+            'state': res.state,
+            'done': info.get('done', 0),
+            'total': info.get('total', REQUIRED_IMAGE_COUNT),
+        }
+        if res.state == 'FAILURE':
+            data['error'] = str(res.info)
+        return Response(data)
 
     @action(detail=True, methods=['get'])
     def download_zip(self, request, pk=None):

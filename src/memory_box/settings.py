@@ -148,6 +148,20 @@ N8N_WEBHOOK_URL = os.getenv('N8N_WEBHOOK_URL') or None
 # n8n webhook cuando el pedido pasa a Finalizado (mensaje WhatsApp al cliente con saldo pendiente).
 N8N_WEBHOOK_FINALIZED_URL = os.getenv('N8N_WEBHOOK_FINALIZED_URL') or None
 
+# ─── Celery / Redis ───
+# Las notificaciones a n8n (y futuras tareas pesadas) se ejecutan en un worker
+# Celery para no bloquear la respuesta HTTP.
+REDIS_URL = os.getenv('REDIS_URL', 'redis://redis:6379/0')
+CELERY_BROKER_URL = os.getenv('CELERY_BROKER_URL', REDIS_URL)
+CELERY_RESULT_BACKEND = os.getenv('CELERY_RESULT_BACKEND', REDIS_URL)
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_TIMEZONE = TIME_ZONE
+CELERY_ENABLE_UTC = True
+# Si el broker no está disponible al arrancar, no colgar el proceso web.
+CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
+
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 SWAGGER_SETTINGS = {

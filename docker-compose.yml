@@ -21,6 +21,36 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      redis:
+        condition: service_started
+
+  # Worker Celery: ejecuta tareas async (notificaciones n8n, etc.) sin bloquear la API.
+  celery_worker:
+    build: .
+    image: memory-box-back
+    container_name: memory-box-celery
+    command: celery -A memory_box worker -l info
+    env_file:
+      - .env
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+    volumes:
+      - ./src:/app/src
+      - media_volume:/app/src/media
+    networks:
+      - memory-box-net
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+  redis:
+    image: redis:7-alpine
+    container_name: memory-box-redis
+    restart: unless-stopped
+    networks:
+      - memory-box-net
 
   db:
     image: postgres:14-alpine
