@@ -1,0 +1,38 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: memory-box-celery
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: memory-box-celery
+  template:
+    metadata:
+      labels:
+        app: memory-box-celery
+    spec:
+      containers:
+        - name: celery
+          image: localhost:32000/memory-box-back:prod
+          imagePullPolicy: Always
+          command: ["celery", "-A", "memory_box", "worker", "-l", "info"]
+          envFrom:
+            - configMapRef:
+                name: memory-box-config
+            - secretRef:
+                name: memory-box-secret
+          volumeMounts:
+            - name: media
+              mountPath: /app/src/media
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+      volumes:
+        - name: media
+          persistentVolumeClaim:
+            claimName: memory-box-media-pvc

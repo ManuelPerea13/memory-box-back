@@ -10,3 +10,7 @@ resources:
   - postgres-service.yaml
   - web-deployment.yaml
   - web-service.yaml
+  - redis-deployment.yaml
+  - redis-service.yaml
+  - celery-deployment.yaml
+  - ingress.yaml
