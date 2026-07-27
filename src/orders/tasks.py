@@ -83,6 +83,20 @@ def process_order_images_task(self, order_id, items):
         top = max(0, min(y, img_h - 1))
         right = max(left + 1, min(x + w, img_w))
         bottom = max(top + 1, min(y + h, img_h))
+        # Si el crop pedido no entra en la imagen recibida, el clamp de arriba
+        # cambia el encuadre (recorte corrido / más abierto). Logueamos para
+        # detectar desfasajes entre lo que vio el cropper y lo que llegó acá.
+        if x + w > img_w or y + h > img_h:
+            logger.warning(
+                'process_order_images_task: order %s slot %s CROP FUERA DE RANGO '
+                'img=%sx%s crop=(x=%s,y=%s,w=%s,h=%s) -> clamp=(%s,%s,%s,%s)',
+                order_id, slot, img_w, img_h, x, y, w, h, left, top, right, bottom,
+            )
+        else:
+            logger.info(
+                'process_order_images_task: order %s slot %s img=%sx%s crop=(%s,%s,%s,%s)',
+                order_id, slot, img_w, img_h, x, y, w, h,
+            )
         cropped = img.crop((left, top, right, bottom))
         cw, ch = cropped.size
 
