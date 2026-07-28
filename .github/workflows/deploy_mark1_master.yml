@@ -1,27 +1,15 @@
 name: Deploy Mark1 (master)
 
-# --- CI/CD automático PAUSADO ---
-# Deploy manual en mark1 (rama master), ejemplo:
-#   cd ~/workspaces/memory-box/repos/memory-box-back
-#   git fetch origin && git checkout master && git pull origin master
-#   IMAGE_TAG="master-$(git rev-parse --short HEAD)"
-#   microk8s enable registry >/dev/null 2>&1 || true
-#   docker build -t "localhost:32000/memory-box-back:${IMAGE_TAG}" .
-#   docker push "localhost:32000/memory-box-back:${IMAGE_TAG}"
-#   microk8s kubectl apply -k k8s/microk8s/overlays/prod
-#   microk8s kubectl -n memory-box-prod set image deployment/memory-box-back web="localhost:32000/memory-box-back:${IMAGE_TAG}"
-#   microk8s kubectl -n memory-box-prod rollout restart deployment/memory-box-back
-#   microk8s kubectl -n memory-box-prod rollout status deployment/memory-box-back --timeout=300s
+# Deploy automático a mark1 (MicroK8s) en cada push a master.
+# Corre en un self-hosted runner instalado en mark1: el registry localhost:32000
+# y microk8s solo son accesibles desde esa máquina.
 #
-# Para reactivar GitHub Actions: descomentar el bloque `on.push` de abajo y quitar `if: false` del job `deploy`.
-
-# on:
-#   push:
-#     branches:
-#       - master
-#   workflow_dispatch:
+# Deploy manual: Actions -> "Deploy Mark1 (master)" -> Run workflow.
 
 on:
+  push:
+    branches:
+      - master
   workflow_dispatch:
 
 concurrency:
@@ -30,26 +18,41 @@ concurrency:
 
 jobs:
   deploy:
-    if: false
     runs-on:
       - self-hosted
       - Linux
       - X64
+      - memory-box-back
+    env:
+      NS: memory-box-prod
+      APP: memory-box-back
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Build image and rollout on mark1
+      - name: Build, push y rollout en mark1
         shell: bash
         run: |
           set -euo pipefail
-          IMAGE_TAG="master-${GITHUB_SHA::7}"
+          IMAGE="localhost:32000/${APP}:master-${GITHUB_SHA::7}"
+          echo "Imagen: ${IMAGE}"
+
           microk8s enable registry >/dev/null 2>&1 || true
 
-          docker build -t "localhost:32000/memory-box-back:${IMAGE_TAG}" .
-          docker push "localhost:32000/memory-box-back:${IMAGE_TAG}"
+          docker build -t "${IMAGE}" .
+          docker push "${IMAGE}"
+
+          # Aplica manifests (configmap/ingress/redis/celery) por si cambiaron.
           microk8s kubectl apply -k k8s/microk8s/overlays/prod
-          microk8s kubectl -n memory-box-prod set image deployment/memory-box-back web="localhost:32000/memory-box-back:${IMAGE_TAG}"
-          microk8s kubectl -n memory-box-prod rollout restart deployment/memory-box-back
-          microk8s kubectl -n memory-box-prod rollout status deployment/memory-box-back --timeout=300s
-          microk8s kubectl -n memory-box-prod get pods -o wide
+
+          # web y worker Celery comparten la misma imagen.
+          microk8s kubectl -n "${NS}" set image deployment/${APP} web="${IMAGE}"
+          microk8s kubectl -n "${NS}" set image deployment/memory-box-celery celery="${IMAGE}"
+
+          microk8s kubectl -n "${NS}" rollout status deployment/${APP} --timeout=300s
+          microk8s kubectl -n "${NS}" rollout status deployment/memory-box-celery --timeout=300s
+
+      - name: Estado final
+        if: always()
+        shell: bash
+        run: microk8s kubectl get pods -n "${NS}" -o wide
