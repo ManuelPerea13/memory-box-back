@@ -507,6 +507,11 @@ class OrderViewSet(viewsets.ModelViewSet):
                     'crop_norm': data['crop_norm'],
                     'name': getattr(img_file, 'name', f'crop_{i}.png') or f'crop_{i}.png',
                 })
+                # Diagnóstico opcional que manda el editor: espacio en el que el
+                # cropper reportó el recorte, para detectar desfasajes.
+                dbg = request.data.get(f'crop_debug_{i}')
+                if dbg:
+                    logger.info('submit_images: order=%s slot=%s debug=%s', order.id, i, dbg)
         except OSError as e:
             logger.exception('submit_images: error guardando temporales order=%s: %s', order.id, e)
             return Response({'error': 'No se pudieron guardar las imágenes'},
