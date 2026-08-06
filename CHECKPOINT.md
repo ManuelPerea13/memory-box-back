@@ -4,9 +4,10 @@
 
 ## Estado general
 
-🟡 En desarrollo. Integrado al dev-panel (web :8104). Estado
-real del código sin relevar todavía. Prod corre en mark1
-(microk8s, namespace `memory-box-prod`), no en el droplet.
+🟢 Prod en mark1 (microk8s, namespace `memory-box-prod`), API
+servida por mismo origen en https://memory-box.shop/api. Integrado
+al dev-panel (web :8104). Estado real del código sin relevar
+todavía.
 
 ## Último trabajo (2026-08-06)
 
@@ -14,27 +15,32 @@ real del código sin relevar todavía. Prod corre en mark1
    `memory_box`, 20 tablas) desde pod `memory-box-db` en mark1,
    guardado en `backups/memory_box-20260806-162231.sql.gz` (21 KB,
    dump completo verificado).
-2. Migración dominio memory-box.shop: configmap suma
-   `https://memory-box.shop` y `https://www.memory-box.shop` a
-   `CORS_ALLOWED_ORIGINS` y `CSRF_TRUSTED_ORIGINS`. Aplicado y
-   back/celery reiniciados; CORS verificado. El front sigue
-   llamando a `https://api.innovbi.site/` (baked en build Next.js)
-   — no hace falta rebuild. Cambio directo al cluster, **sin
-   commit todavía**. Falta DNS (zona CF) — ver checkpoint del
-   front.
+2. Migración a memory-box.shop (commit `012b3d2`): configmap con
+   `FRONTEND_URL`, CORS y CSRF apuntando solo a memory-box.shop
+   (+ www); eliminado el ingress `api.innovbi.site` (manifest y
+   objeto vivo) — `/api`, `/media` y `/docs` rutean por el ingress
+   del front. Aplicado a mano en mark1 (Actions no disparó ese
+   día), back/celery reiniciados, verificado /api 200 mismo origen.
 
 ## Hecho
 
 - Integrado al dev-panel (web :8104).
 - Backup de base de prod en `backups/` (2026-08-06).
-- CORS/CSRF con memory-box.shop (2026-08-06).
+- API por mismo origen en memory-box.shop; innovbi.site fuera
+  (2026-08-06).
 
 ## Pendiente
 
 - [ ] Completar este checkpoint con el estado real del proyecto
       (leer el código en la próxima tarea).
-- [ ] Commit + push de k8s/microk8s/base/configmap.yaml; pull en
-      clon de mark1.
+
+## Notas / riesgos (2026-08-06)
+
+- Django admin ya no es público: solo LAN via NodePort
+  (http://192.168.88.50:30082/admin). `/admin` en el dominio es
+  del front.
+- `/static` público es del front; los estáticos de Django admin
+  quedan detrás del NodePort (whitenoise).
 
 ## API y datos
 
