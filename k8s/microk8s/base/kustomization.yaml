@@ -13,4 +13,3 @@ resources:
   - redis-deployment.yaml
   - redis-service.yaml
   - celery-deployment.yaml
-  - ingress.yaml

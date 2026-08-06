@@ -6,10 +6,10 @@ data:
   DB_HOST: "memory-box-db"
   DEBUG: "false"
   ALLOWED_HOSTS: "*"
-  CORS_ALLOWED_ORIGINS: "https://innovbi.site,https://www.innovbi.site"
-  CSRF_TRUSTED_ORIGINS: "https://api.innovbi.site"
+  CORS_ALLOWED_ORIGINS: "https://memory-box.shop,https://www.memory-box.shop"
+  CSRF_TRUSTED_ORIGINS: "https://memory-box.shop,https://www.memory-box.shop"
   # URL del front para los QR de los pedidos
-  FRONTEND_URL: "https://innovbi.site"
+  FRONTEND_URL: "https://memory-box.shop"
   # Broker/Backend de Celery (Redis en el mismo namespace)
   REDIS_URL: "redis://memory-box-redis:6379/0"
   # n8n deshabilitado por ahora (el código no llama a estos webhooks)
